@@ -1,0 +1,78 @@
+@import 'styles/variables';
+@import 'styles/mixins';
+
+.erp-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  @include glass-effect; // Fundo translúcido bonito
+  background-color: rgba($color-gray-900, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn $transition-fast;
+}
+
+.erp-modal-container {
+  background-color: $theme-surface;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-xl;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  animation: slideUp $transition-fast;
+  width: 100%;
+  margin: $spacing-4;
+
+  &.erp-modal--sm { max-width: 400px; }
+  &.erp-modal--md { max-width: 600px; }
+  &.erp-modal--lg { max-width: 900px; }
+}
+
+.erp-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $spacing-4;
+  border-bottom: 1px solid $theme-border;
+
+  .title {
+    font-family: $font-family-heading;
+    font-size: $font-size-lg;
+    font-weight: $font-weight-semibold;
+    color: $theme-text;
+    margin: 0;
+  }
+
+  .close-btn {
+    background: transparent;
+    border: none;
+    font-size: $font-size-2xl;
+    line-height: 1;
+    cursor: pointer;
+    color: $color-gray-500;
+    transition: color $transition-fast;
+
+    &:hover {
+      color: $color-error;
+    }
+  }
+}
+
+.erp-modal-body {
+  padding: $spacing-4;
+  overflow-y: auto;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}

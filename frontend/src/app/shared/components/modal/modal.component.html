@@ -1,0 +1,13 @@
+@if (isOpen) {
+  <div class="erp-modal-overlay" (click)="close()">
+    <div class="erp-modal-container" [ngClass]="'erp-modal--' + size" (click)="$event.stopPropagation()">
+      <div class="erp-modal-header">
+        <h3 class="title">{{ title }}</h3>
+        <button class="close-btn" (click)="close()">&times;</button>
+      </div>
+      <div class="erp-modal-body">
+        <ng-content></ng-content>
+      </div>
+    </div>
+  </div>
+}

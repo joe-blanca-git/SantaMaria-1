@@ -1,0 +1,29 @@
+// Mapeamento Temático (Backgrounds, Componentes, Botões)
+
+$theme-bg: $color-gray-50;
+$theme-bg-dark: $color-gray-900;
+$theme-surface: $color-white;
+$theme-surface-dark: $color-gray-800;
+$theme-border: $color-gray-200;
+
+$theme-text: $color-gray-900;
+$theme-text-muted: $color-gray-500;
+
+$theme-sidebar-bg: $color-gray-900; // Sidebar escuro elegante
+$theme-sidebar-text: $color-gray-300;
+$theme-sidebar-hover: $color-gray-800;
+$theme-sidebar-active: $color-white;
+
+$theme-header-bg: $color-white;
+$theme-header-text: $color-gray-800;
+
+$theme-card-bg: $color-white;
+$theme-card-border: $color-gray-200;
+
+$theme-btn-primary-bg: $color-primary;
+$theme-btn-primary-hover: $color-primary-dark;
+$theme-btn-primary-text: $color-white;
+
+$theme-btn-secondary-bg: $color-gray-200;
+$theme-btn-secondary-hover: $color-gray-300;
+$theme-btn-secondary-text: $color-gray-800;

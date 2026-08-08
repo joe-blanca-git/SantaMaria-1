@@ -1,0 +1,40 @@
+<header class="header">
+  
+  <!-- LEFT: LOGO -->
+  <div class="header-brand">
+    <a routerLink="/" class="logo">
+      <i class="fa-solid fa-layer-group"></i> ERP Modular
+    </a>
+  </div>
+
+  <!-- CENTER: NAVIGATION & SEARCH -->
+  <div class="header-center">
+    <nav class="main-nav">
+      <a routerLink="/home" routerLinkActive="active" class="nav-item">
+        <i class="fa-solid fa-house"></i> Home
+      </a>
+    </nav>
+    <div class="search-bar">
+      <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+      <input type="text" placeholder="Buscar no sistema..." />
+      <span class="shortcut">Ctrl + K</span>
+    </div>
+  </div>
+
+  <!-- RIGHT: ACTIONS & PROFILE -->
+  <div class="header-actions">
+    <button class="btn-icon" aria-label="Notificações">
+      <i class="fa-regular fa-bell"></i>
+    </button>
+    
+    <div class="user-profile">
+      <div class="info">
+        <span class="name">{{ user()?.name }}</span>
+        <span class="role">{{ user()?.role }}</span>
+      </div>
+      <app-avatar [initials]="user()?.name?.charAt(0) || 'U'" [imageUrl]="user()?.avatarUrl || ''" status="online"></app-avatar>
+      <i class="fa-solid fa-chevron-down arrow-down"></i>
+    </div>
+  </div>
+
+</header>

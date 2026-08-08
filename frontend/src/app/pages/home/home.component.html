@@ -1,0 +1,53 @@
+<div class="home-container">
+  
+  <!-- WELCOME SECTION -->
+  <section class="welcome-section">
+    <div class="welcome-content">
+      <span class="greeting-badge">Bem-vindo de volta</span>
+      <h1>Olá, {{ user()?.name }}! <span class="wave">👋</span></h1>
+      <p class="subtitle">Tenha um ótimo dia e seja bem-vindo ao seu ERP.</p>
+      
+      <div class="datetime-pill">
+        <div class="pill-item">
+          <i class="fa-regular fa-calendar"></i>
+          <span>{{ currentDate | date:'fullDate' }}</span>
+        </div>
+        <div class="pill-item">
+          <i class="fa-regular fa-clock"></i>
+          <span>{{ currentDate | date:'HH:mm' }}</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MODULES SECTION -->
+  <section class="modules-section">
+    <div class="section-header">
+      <h2>Módulos</h2>
+      <p>Acesse os módulos disponíveis no sistema.</p>
+    </div>
+
+    <div class="modules-grid">
+      @if (modules()) {
+        @for (mod of modules(); track mod.id) {
+          <app-card [padding]="false" class="module-card">
+            <a [routerLink]="mod.route" class="card-link">
+              <div class="icon-wrap">
+                <i [class]="mod.icon"></i>
+              </div>
+              <div class="card-info">
+                <h3>{{ mod.name }}</h3>
+                <p>{{ mod.description }}</p>
+              </div>
+              <div class="card-footer">
+                <span>Acessar módulo</span>
+                <i class="fa-solid fa-arrow-right"></i>
+              </div>
+            </a>
+          </app-card>
+        }
+      }
+    </div>
+  </section>
+
+</div>

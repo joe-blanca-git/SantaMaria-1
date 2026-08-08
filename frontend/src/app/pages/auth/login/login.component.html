@@ -1,0 +1,70 @@
+<div class="login-wrapper">
+  
+  <!-- Left Side: Illustration / Branding -->
+  <div class="login-illustration">
+    <div class="illustration-content">
+      <h2>Transforme a gestão do seu negócio</h2>
+      <p>O ERP Modular oferece controle total sobre finanças, vendas e operações em uma única plataforma intuitiva e inteligente.</p>
+    </div>
+  </div>
+
+  <!-- Right Side: Form -->
+  <div class="login-content">
+    <div class="login-container">
+      
+      <div class="login-header">
+        <div class="logo">
+          <i class="fa-solid fa-layer-group"></i> ERP Modular
+        </div>
+        <p class="subtitle">Bem-vindo de volta! Acesse sua conta.</p>
+      </div>
+
+      @if (errorMessage) {
+        <div class="login-error-alert">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          {{ errorMessage }}
+        </div>
+      }
+
+      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="login-form">
+        
+        <app-input
+          type="email"
+          label="Email corporativo"
+          placeholder="seu@email.com"
+          formControlName="email"
+          [errorMessage]="emailError"
+          icon="fa-regular fa-envelope">
+        </app-input>
+
+        <app-input
+          type="password"
+          label="Senha"
+          placeholder="••••••••"
+          formControlName="password"
+          [errorMessage]="passwordError"
+          icon="fa-solid fa-lock">
+        </app-input>
+
+        <div class="form-actions">
+          <label class="remember-me">
+            <input type="checkbox" class="form-check-input mt-0" formControlName="rememberMe">
+            Lembrar-me
+          </label>
+          <a href="#" class="forgot-password">Esqueci a senha</a>
+        </div>
+
+        <app-button
+          variant="primary"
+          size="lg"
+          [loading]="isLoading"
+          class="w-full"
+          (clicked)="onSubmit()">
+          Entrar na Plataforma
+        </app-button>
+        
+      </form>
+      
+    </div>
+  </div>
+</div>

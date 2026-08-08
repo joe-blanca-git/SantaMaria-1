@@ -1,0 +1,30 @@
+<div class="mb-3 erp-input-wrapper" [class.is-disabled]="disabled">
+  @if (label) {
+    <label class="form-label fw-medium text-secondary mb-1 small">{{ label }}</label>
+  }
+  
+  <div class="position-relative">
+    @if (icon) {
+      <span class="position-absolute top-50 translate-middle-y text-muted erp-input-icon">
+        <i [class]="icon"></i>
+      </span>
+    }
+    <input 
+      class="form-control"
+      [class.ps-5]="!!icon"
+      [class.is-invalid]="!!errorMessage"
+      [type]="type"
+      [placeholder]="placeholder"
+      [disabled]="disabled"
+      [value]="value"
+      (input)="onInput($event)"
+      (blur)="onTouch()"
+    />
+  </div>
+
+  @if (errorMessage) {
+    <div class="invalid-feedback d-block mt-1">
+      {{ errorMessage }}
+    </div>
+  }
+</div>
