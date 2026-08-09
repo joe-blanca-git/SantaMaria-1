@@ -1,0 +1,28 @@
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, List
+from datetime import datetime
+
+class EmpresaBase(BaseModel):
+    nome: Optional[str] = Field(None, max_length=80)
+    descricao: Optional[str] = Field(None, max_length=200)
+
+class EmpresaCreate(EmpresaBase):
+    nome: str = Field(..., max_length=80)
+
+class EmpresaUpdate(EmpresaBase):
+    pass
+
+class EmpresaResponse(EmpresaBase):
+    idEmpresas: int
+    nome: str
+    createdAt: Optional[datetime] = None
+    updatedAte: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class EmpresaPaginatedResponse(BaseModel):
+    items: List[EmpresaResponse]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int

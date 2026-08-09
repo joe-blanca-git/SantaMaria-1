@@ -622,3 +622,22 @@ Este ERP não será apenas um sistema, mas uma plataforma em constante evoluçã
 Cada módulo deverá ser desenvolvido de forma independente, seguindo os mesmos padrões arquiteturais e visuais, garantindo consistência, escalabilidade e facilidade de manutenção.
 
 Todas as decisões técnicas serão tomadas priorizando simplicidade, qualidade de código e preparação para crescimento a longo prazo, evitando soluções improvisadas e reduzindo o custo de manutenção conforme a plataforma evoluir.
+
+---
+
+# Ambiente e Integração com API (Módulo de Despesas de Viagens)
+
+O projeto frontend possui configuração de múltiplos ambientes (`environment.ts` para desenvolvimento local e `environment.prod.ts` para produção) para o consumo da API FastAPI (`stamariabd`). 
+
+Atualmente, o **Módulo de Despesas de Viagens** possui integração completa com as seguintes APIs:
+* **Categorias** (`/api/v1/categorias`): CRUD completo de categorias de despesas.
+* **Colaboradores** (`/api/v1/colaboradores`): CRUD completo de colaboradores com paginação.
+* **Tipos de Colaborador** (`/api/v1/tipos-colaboradores`): Lista e criação de tipos de vínculo a partir do cadastro do colaborador.
+* **Centros de Custo** (`/api/v1/centros-custo`): CRUD completo de centros de custo.
+* **Unidades** (`/api/v1/unidades`): CRUD completo de unidades de negócio.
+* **Importação em Lote via Excel**: Integração inteligente utilizando FastAPI `StreamingResponse` (retornando NDJSON) que envia o status de cada etapa (Análise, Validação e Atualização) para o frontend (via `fetch` / `ReadableStream`), permitindo feedback em tempo real (spinner step-by-step). Suporta auto-criação de registros pendentes (ex: Centros de Custo não encontrados).
+
+Para executar o sistema localmente integrado à API:
+1. Inicie o servidor FastAPI na porta 8000 (o Angular apontará por padrão para `http://127.0.0.1:8000/api/v1`).
+2. Execute o frontend Angular com `npm run start` (ou equivalente).
+3. (Opcional) Para build de produção, certifique-se de configurar a `apiUrl` correta no `environment.prod.ts`.
