@@ -7,25 +7,25 @@
   left: 0;
   right: 0;
   bottom: 0;
-  @include glass-effect; // Fundo translúcido bonito
-  background-color: rgba($color-gray-900, 0.5);
+  background-color: rgba($gray-900, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn $transition-fast;
+  animation: fadeIn $transition-base;
 }
 
 .erp-modal-container {
-  background-color: $theme-surface;
-  border-radius: $radius-lg;
-  box-shadow: $shadow-xl;
+  background-color: $card-bg;
+  border-radius: $border-radius-lg;
+  box-shadow: $box-shadow-lg;
   display: flex;
   flex-direction: column;
   max-height: 90vh;
-  animation: slideUp $transition-fast;
+  animation: slideUp $transition-base;
   width: 100%;
-  margin: $spacing-4;
+  margin: 1.5rem;
 
   &.erp-modal--sm { max-width: 400px; }
   &.erp-modal--md { max-width: 600px; }
@@ -36,34 +36,33 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: $spacing-4;
-  border-bottom: 1px solid $theme-border;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid $border-color;
 
   .title {
-    font-family: $font-family-heading;
-    font-size: $font-size-lg;
+    font-size: 1.25rem;
     font-weight: $font-weight-semibold;
-    color: $theme-text;
+    color: $gray-800;
     margin: 0;
   }
 
   .close-btn {
     background: transparent;
     border: none;
-    font-size: $font-size-2xl;
+    font-size: 1.5rem;
     line-height: 1;
     cursor: pointer;
-    color: $color-gray-500;
-    transition: color $transition-fast;
+    color: $gray-500;
+    transition: color $transition-base;
 
     &:hover {
-      color: $color-error;
+      color: $danger;
     }
   }
 }
 
 .erp-modal-body {
-  padding: $spacing-4;
+  padding: 1.5rem;
   overflow-y: auto;
 }
 
