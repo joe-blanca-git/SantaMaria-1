@@ -16,5 +16,13 @@ export const MOCK_MODULES: AppModule[] = [
     route: '/despesas-viagens',
     description: 'Gerencie despesas, reembolsos e prestação de contas de viagens.',
     isActive: true
+  },
+  {
+    id: 'mod-extratores',
+    name: 'Extratores',
+    icon: 'fa-solid fa-file-import',
+    route: '/extratores',
+    description: 'Configure e gerencie extratores de dados inteligentes para importação automatizada.',
+    isActive: true
   }
 ];

@@ -18,3 +18,6 @@ class ImportacaoService:
             size=size,
             total_pages=total_pages
         )
+
+    def excluir_importacao(self, id_importacao: int) -> bool:
+        return self.repository.delete(id_importacao)

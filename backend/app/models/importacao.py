@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 class Importacao(Base):
@@ -12,3 +13,5 @@ class Importacao(Base):
     createdAt = Column(DateTime, default=func.now())
     updatedAte = Column(DateTime, nullable=True, onupdate=func.now())
     tipo = Column(String(45), nullable=False)
+    
+    movimentacoes = relationship("Movimentacao", back_populates="importacao", cascade="all, delete-orphan")

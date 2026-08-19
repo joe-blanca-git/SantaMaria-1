@@ -7,53 +7,376 @@ import { ButtonComponent } from '../../shared/components/button/button.component
 import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { ModalComponent } from '../../shared/components/modal/modal.component';
 import { ConfirmModalComponent } from '../../shared/components/confirm-modal/confirm-modal.component';
+import { NgSelectModule } from '@ng-select/ng-select';
+import { NgxEchartsDirective } from 'ngx-echarts';
+import * as echarts from 'echarts';
+import { EChartsOption } from 'echarts';
+import { HttpClient } from '@angular/common/http';
 
 import { ColaboradoresService, Colaborador } from '../../core/services/colaboradores.service';
 import { CategoriasService, Categoria } from '../../core/services/categorias.service';
-import { TiposColaboradoresService, TipoColaborador } from '../../core/services/tipos-colaboradores.service';
+import { CargosColaboradoresService, CargoColaborador } from '../../core/services/cargos-colaboradores.service';
 
 import { CentrosCustoService, CentroCusto } from '../../core/services/centros-custo.service';
 import { UnidadesService, Unidade } from '../../core/services/unidades.service';
-import { ImportacoesService, Importacao } from '../../core/services/importacoes.service';
-import { ViewChild, ElementRef } from '@angular/core';
+import { ImportacoesService, Importacao, DespesaExtraida } from '../../core/services/importacoes.service';
+import { EmpresasService, Empresa } from '../../core/services/empresas.service';
+import { ViewChild, ElementRef, HostListener } from '@angular/core';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import { FlatpickrModule } from 'angularx-flatpickr';
+import { Portuguese } from 'flatpickr/dist/l10n/pt.js';
+import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 
 @Component({
   selector: 'app-despesas-viagens',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, CardComponent, ButtonComponent, BadgeComponent, ModalComponent, ConfirmModalComponent],
+  imports: [CommonModule, RouterModule, FormsModule, NgSelectModule, CardComponent, ButtonComponent, BadgeComponent, ModalComponent, ConfirmModalComponent, NgxEchartsDirective, FlatpickrModule, SkeletonComponent],
   templateUrl: './despesas-viagens.component.html',
   styleUrl: './despesas-viagens.component.scss'
 })
 export class DespesasViagensComponent implements OnInit {
-  activeTab: 'dashboard' | 'atualizacao' | 'configuracoes' = 'atualizacao';
-  activeConfigTab: 'colaboradores' | 'categorias' | 'centros-custo' | 'unidades' = 'colaboradores';
+  isDashboardLoading = false;
+  activeTab: 'dashboard' | 'atualizacao' | 'configuracoes' = 'dashboard';
+  activeConfigTab: 'colaboradores' | 'categorias' | 'centros-custo' | 'unidades' | 'empresas' = 'colaboradores';
+  activeDashboardTab: 'visao-geral' | 'categorias' | 'empresas' = 'visao-geral';
+  
+  isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null 
+    ? localStorage.getItem('sidebarCollapsed') === 'true' 
+    : true;
+
+  toggleSidebar(): void {
+    this.isSidebarCollapsed = !this.isSidebarCollapsed;
+    localStorage.setItem('sidebarCollapsed', String(this.isSidebarCollapsed));
+  }
+
+  // Dashboard Refs & Status
+  @ViewChild('dashboardWrapper') dashboardWrapper!: ElementRef;
+  @ViewChild('dashboardContent') dashboardContent!: ElementRef;
+  isFullscreen = false;
+
+  @HostListener('document:fullscreenchange', ['$event'])
+  @HostListener('document:webkitfullscreenchange', ['$event'])
+  @HostListener('document:mozfullscreenchange', ['$event'])
+  @HostListener('document:MSFullscreenChange', ['$event'])
+  onFullscreenChange() {
+    this.isFullscreen = !!document.fullscreenElement;
+  }
+
+  // Filtros Dashboard
+  locale = Portuguese;
+
+  dashDataInicio: Date | null = null;
+  dashDataFim: Date | null = null;
+  activePeriodShortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado' | 'personalizado' | null = null;
+  
+  dashFiltroEmpresa: string = null as any;
+  dashFiltroPessoa: string = null as any;
+  dashFiltroCategoria: string = null as any;
+
+  // KPIs da aba Categorias
+  topCategoryName = 'N/A';
+  topCategoryValue = 0;
+  maiorCrescimentoName = 'N/A';
+  maiorCrescimentoPct = 0;
+
+  // Seleção e interatividade de categorias
+  selectedCategoryName: string | null = null;
+  selectedCategoryId: number | null = null;
+  categoryDetailsLoading = false;
+
+  categoryVisaoGeral = {
+    total: 0,
+    quantidadeDespesas: 0,
+    ticketMedio: 0,
+    maiorDespesa: 0,
+    maiorDespesaContexto: ''
+  };
+  categoryTabelaDespesas: any[] = [];
+  categorySpenders: any[] = [];
+  categoryEmpresasOption: EChartsOption = {};
+
+  chartOptionAreaCategorias: EChartsOption = {};
+  chartOptionDonutCategoriaTab: EChartsOption = {};
+  donutCategoriasTab: any[] = [];
+
+  dashVisaoGeral = {
+    total: 0,
+    quantidadeDespesas: 0,
+    totalMes: 0,
+    percentualMes: 0,
+    ticketMedio: 0,
+    ticketMedioPercentual: 0,
+    maiorDespesa: 0,
+    maiorDespesaContexto: 'Sem registros'
+  };
+
+  chartOptionArea: EChartsOption = {};
+  chartOptionDonutCategoria: EChartsOption = {};
+  chartOptionDonutEmpresa: EChartsOption = {};
+  chartOptionMapa: EChartsOption = {};
+  
+  tabelaMaioresDespesas: any[] = [];
 
   constructor(
+    private http: HttpClient,
     private colaboradoresService: ColaboradoresService,
     private categoriasService: CategoriasService,
-    private tiposService: TiposColaboradoresService,
+    private cargosService: CargosColaboradoresService,
     private centrosCustoService: CentrosCustoService,
     private unidadesService: UnidadesService,
-    private importacoesService: ImportacoesService
+    private importacoesService: ImportacoesService,
+    private empresasService: EmpresasService
   ) {}
 
-  ngOnInit() {
+  ngOnInit(): void {
     this.carregarColaboradores();
     this.carregarCategorias();
-    this.carregarTipos();
+    this.carregarCargos();
     this.carregarCentrosCusto();
-    this.carregarCentrosCustoGeral();
     this.carregarUnidades();
-    this.carregarUnidadesGeral();
     this.carregarImportacoes();
+    this.carregarEmpresas();
+    this.carregarColaboradoresGeral();
+    this.carregarCategoriasGeral();
+    this.carregarEmpresasGeral();
+    this.carregarEmpresasConfig();
+    this.selecionarAtalhoPeriodo('este-ano');
+  }
+
+  carregarDadosDashboard() {
+    this.isDashboardLoading = true;
+    const filtros: any = {};
+    if (this.dashDataInicio) {
+      filtros.data_inicio = this.formatDate(this.dashDataInicio);
+    }
+    if (this.dashDataFim) {
+      filtros.data_fim = this.formatDate(this.dashDataFim);
+    }
+    
+    if (this.dashFiltroEmpresa) {
+      filtros.id_empresa = this.dashFiltroEmpresa;
+    }
+    if (this.dashFiltroPessoa) {
+      filtros.id_colaborador = this.dashFiltroPessoa;
+    }
+    if (this.dashFiltroCategoria) {
+      filtros.id_categoria = this.dashFiltroCategoria;
+    }
+    
+    this.importacoesService.obterDadosDashboard(filtros).subscribe({
+      next: (res) => {
+        this.dashVisaoGeral = res.dashVisaoGeral;
+        this.tabelaMaioresDespesas = res.tabelaMaioresDespesas;
+        this.donutCategoriasTab = res.donutCategorias || [];
+        
+        // Calcular Categoria com Maior Gasto
+        if (res.donutCategorias && res.donutCategorias.length > 0) {
+          let maxCat = res.donutCategorias[0];
+          for (const cat of res.donutCategorias) {
+            if (cat.value > maxCat.value) {
+              maxCat = cat;
+            }
+          }
+          this.topCategoryName = maxCat.name;
+          this.topCategoryValue = maxCat.value;
+        } else {
+          this.topCategoryName = 'N/A';
+          this.topCategoryValue = 0;
+        }
+
+        // Maior crescimento
+        if (res.maiorCrescimento) {
+          this.maiorCrescimentoName = res.maiorCrescimento.name || 'N/A';
+          this.maiorCrescimentoPct = res.maiorCrescimento.percentage || 0;
+        } else {
+          this.maiorCrescimentoName = 'N/A';
+          this.maiorCrescimentoPct = 0;
+        }
+
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899'];
+        
+        // 1. Area Chart (Evolução)
+        this.chartOptionArea = {
+          color: colors,
+          tooltip: { trigger: 'axis' },
+          legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: '#64748b' } },
+          grid: { top: 30, left: 20, right: 20, bottom: 40, containLabel: true },
+          xAxis: { type: 'category', boundaryGap: false, data: res.evolucao.meses },
+          yAxis: { type: 'value', axisLabel: { formatter: 'R$ {value}' } },
+          series: res.evolucao.series.map((s: any) => ({
+            name: s.name,
+            type: 'line',
+            stack: 'Total',
+            areaStyle: {},
+            emphasis: { focus: 'series' },
+            data: s.data
+          }))
+        };
+
+        this.chartOptionAreaCategorias = {
+          color: colors,
+          tooltip: { trigger: 'axis' },
+          legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: '#64748b' } },
+          grid: { top: 30, left: 20, right: 20, bottom: 40, containLabel: true },
+          xAxis: { type: 'category', boundaryGap: false, data: res.evolucao.meses },
+          yAxis: { type: 'value', axisLabel: { formatter: 'R$ {value}' } },
+          series: res.evolucao.series.map((s: any) => ({
+            name: s.name,
+            type: 'line',
+            stack: 'Total',
+            areaStyle: {},
+            emphasis: { focus: 'series' },
+            data: s.data
+          }))
+        };
+        
+        // 2. Donut Categorias
+        this.chartOptionDonutCategoria = {
+          color: colors,
+          tooltip: { trigger: 'item', formatter: '{b}: R$ {c} ({d}%)' },
+          legend: { show: false },
+          series: [
+            {
+              type: 'pie',
+              radius: ['40%', '65%'],
+              avoidLabelOverlap: true,
+              itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+              label: {
+                show: true,
+                position: 'outer',
+                formatter: '{b}\n{d}%',
+                fontSize: 10,
+                color: '#64748b'
+              },
+              labelLine: { show: true, length: 8, length2: 8 },
+              data: res.donutCategorias
+            }
+          ]
+        };
+
+        this.chartOptionDonutCategoriaTab = {
+          color: colors,
+          tooltip: { trigger: 'item', formatter: '{b}: R$ {c} ({d}%)' },
+          legend: { show: false },
+          series: [
+            {
+              type: 'pie',
+              radius: ['40%', '65%'],
+              avoidLabelOverlap: true,
+              itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+              label: {
+                show: true,
+                position: 'outer',
+                formatter: '{b}\n{d}%',
+                fontSize: 10,
+                color: '#64748b'
+              },
+              labelLine: { show: true, length: 8, length2: 8 },
+              data: res.donutCategorias
+            }
+          ]
+        };
+        
+        // 3. Donut Empresas
+        this.chartOptionDonutEmpresa = {
+          color: ['#06b6d4', '#8b5cf6', '#f43f5e', '#eab308'],
+          tooltip: { trigger: 'item', formatter: '{b}: R$ {c} ({d}%)' },
+          legend: { show: false },
+          series: [
+            {
+              type: 'pie',
+              radius: ['40%', '65%'],
+              avoidLabelOverlap: true,
+              itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+              label: {
+                show: true,
+                position: 'outer',
+                formatter: '{b}\n{d}%',
+                fontSize: 10,
+                color: '#64748b'
+              },
+              labelLine: { show: true, length: 8, length2: 8 },
+              data: res.donutEmpresas
+            }
+          ]
+        };
+        
+        // 4. Map (chartOptionMapa)
+        this.http.get('/maps/brazil.json').subscribe({
+          next: (geoJson: any) => {
+            echarts.registerMap('brazil', geoJson);
+            
+            const maxVal = Math.max(1000, ...res.mapaData.map((d: any) => d.value));
+            
+            this.chartOptionMapa = {
+              tooltip: {
+                trigger: 'item',
+                formatter: (params: any) => {
+                  return `${params.name}<br/>Total: R$ ${params.value || 0}<br/>Qtd: ${params.data?.qtd || 0} despesas`;
+                }
+              },
+              visualMap: {
+                min: 0,
+                max: maxVal,
+                text: ['Alto', 'Baixo'],
+                realtime: false,
+                calculable: true,
+                inRange: { color: ['#eff6ff', '#3b82f6', '#1e3a8a'] }
+              },
+              series: [
+                {
+                  name: 'Despesas por Estado',
+                  type: 'map',
+                  map: 'brazil',
+                  roam: true,
+                  label: { show: false },
+                  data: res.mapaData
+                }
+              ]
+            };
+            
+            if (this.selectedCategoryId) {
+              this.carregarDetalhesCategoria();
+            } else {
+              this.isDashboardLoading = false;
+            }
+          },
+          error: (mapErr) => {
+            console.error('Erro ao carregar mapa do Brasil', mapErr);
+            this.isDashboardLoading = false;
+          }
+        });
+      },
+      error: (err) => {
+        console.error('Erro ao carregar dados do dashboard', err);
+        this.isDashboardLoading = false;
+      }
+    });
+  }
+
+  formatDate(date: Date): string {
+    const d = new Date(date);
+    let month = '' + (d.getMonth() + 1);
+    let day = '' + d.getDate();
+    const year = d.getFullYear();
+
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+
+    return [year, month, day].join('-');
   }
 
   setActiveTab(tab: 'dashboard' | 'atualizacao' | 'configuracoes') {
     this.activeTab = tab;
   }
 
-  setActiveConfigTab(tab: 'colaboradores' | 'categorias' | 'centros-custo' | 'unidades') {
+  setActiveConfigTab(tab: 'colaboradores' | 'categorias' | 'centros-custo' | 'unidades' | 'empresas'): void {
     this.activeConfigTab = tab;
+  }
+
+  setActiveDashboardTab(tab: 'visao-geral' | 'categorias' | 'empresas'): void {
+    this.activeDashboardTab = tab;
   }
 
   // ==========================================
@@ -86,13 +409,13 @@ export class DespesasViagensComponent implements OnInit {
   }
 
   // ==========================================
-  // TIPOS DE COLABORADOR
+  // CARGOS DE COLABORADOR
   // ==========================================
-  listaTipos: TipoColaborador[] = [];
-  isNovoTipoModalOpen = false;
-  tipoModalMode: 'create' | 'edit' = 'create';
-  novoTipo: any = { nome: '', descricao: '' };
-  isSalvandoTipo = false;
+  listaCargos: CargoColaborador[] = [];
+  isNovoCargoModalOpen = false;
+  cargoModalMode: 'create' | 'edit' = 'create';
+  novoCargo: any = { nome: '', descricao: '' };
+  isSalvandoCargo = false;
 
   // ==========================================
   // UNIDADES
@@ -132,6 +455,27 @@ export class DespesasViagensComponent implements OnInit {
       next: (res) => {
         this.listaUnidadesGeral = res.items;
       }
+    });
+  }
+
+  listaColaboradoresGeral: Colaborador[] = [];
+  carregarColaboradoresGeral() {
+    this.colaboradoresService.listar(1, 1000).subscribe({
+      next: (res) => this.listaColaboradoresGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
+    });
+  }
+
+  listaCategoriasGeral: Categoria[] = [];
+  carregarCategoriasGeral() {
+    this.categoriasService.listar(1, 1000).subscribe({
+      next: (res) => this.listaCategoriasGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
+    });
+  }
+
+  listaEmpresasGeral: any[] = [];
+  carregarEmpresasGeral() {
+    this.empresasService.listar(1, 1000).subscribe({
+      next: (res) => this.listaEmpresasGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
     });
   }
 
@@ -198,74 +542,74 @@ export class DespesasViagensComponent implements OnInit {
     });
   }
 
-  carregarTipos() {
-    this.tiposService.listar(1, 100).subscribe({
-      next: (res) => this.listaTipos = res.items,
-      error: (err) => console.error('Erro ao carregar tipos', err)
+  carregarCargos() {
+    this.cargosService.listar(1, 100).subscribe({
+      next: (res) => this.listaCargos = res.items,
+      error: (err) => console.error('Erro ao carregar cargos', err)
     });
   }
 
-  openNovoTipoModal() {
-    this.tipoModalMode = 'create';
-    this.novoTipo = { nome: '', descricao: '' };
-    this.isNovoTipoModalOpen = true;
+  openNovoCargoModal() {
+    this.cargoModalMode = 'create';
+    this.novoCargo = { nome: '', descricao: '' };
+    this.isNovoCargoModalOpen = true;
   }
 
-  closeNovoTipoModal() {
-    this.isNovoTipoModalOpen = false;
+  closeNovoCargoModal() {
+    this.isNovoCargoModalOpen = false;
   }
 
-  editarTipo(tipo: TipoColaborador) {
-    this.tipoModalMode = 'edit';
-    this.novoTipo = { ...tipo };
+  editarCargo(cargo: CargoColaborador) {
+    this.cargoModalMode = 'edit';
+    this.novoCargo = { ...cargo };
   }
 
-  cancelarEdicaoTipo() {
-    this.tipoModalMode = 'create';
-    this.novoTipo = { nome: '', descricao: '' };
+  cancelarEdicaoCargo() {
+    this.cargoModalMode = 'create';
+    this.novoCargo = { nome: '', descricao: '' };
   }
 
-  salvarNovoTipo() {
-    this.isSalvandoTipo = true;
-    if (this.tipoModalMode === 'create') {
-      this.tiposService.criar(this.novoTipo).subscribe({
-        next: (tipo) => {
-          if (tipo.idTipoColaborador) {
-            this.novoColaborador.idTipoColaborador = tipo.idTipoColaborador;
+  salvarNovoCargo() {
+    this.isSalvandoCargo = true;
+    if (this.cargoModalMode === 'create') {
+      this.cargosService.criar(this.novoCargo).subscribe({
+        next: (cargo) => {
+          if (cargo.idCargoColaborador) {
+            this.novoColaborador.idCargoColaborador = cargo.idCargoColaborador;
           }
-          this.isSalvandoTipo = false;
-          this.carregarTipos();
-          this.cancelarEdicaoTipo();
+          this.isSalvandoCargo = false;
+          this.carregarCargos();
+          this.cancelarEdicaoCargo();
         },
         error: (err: any) => {
-          console.error('Erro ao salvar tipo', err);
-          this.isSalvandoTipo = false;
+          console.error('Erro ao salvar cargo', err);
+          this.isSalvandoCargo = false;
         }
       });
     } else {
-      this.tiposService.atualizar(this.novoTipo.idTipoColaborador, this.novoTipo).subscribe({
+      this.cargosService.atualizar(this.novoCargo.idCargoColaborador, this.novoCargo).subscribe({
         next: () => {
-          this.isSalvandoTipo = false;
-          this.carregarTipos();
-          this.cancelarEdicaoTipo();
+          this.isSalvandoCargo = false;
+          this.carregarCargos();
+          this.cancelarEdicaoCargo();
         },
         error: (err: any) => {
-          console.error('Erro ao atualizar tipo', err);
-          this.isSalvandoTipo = false;
+          console.error('Erro ao atualizar cargo', err);
+          this.isSalvandoCargo = false;
         }
       });
     }
   }
 
-  confirmarExclusaoTipo(id: number) {
-    this.openConfirmModal('Excluir Tipo de Vínculo', 'Tem certeza que deseja excluir este tipo? Caso existam colaboradores vinculados, você poderá ter problemas.', () => {
-      this.tiposService.excluir(id).subscribe({
+  confirmarExclusaoCargo(id: number) {
+    this.openConfirmModal('Excluir Cargo de Vínculo', 'Tem certeza que deseja excluir este cargo? Caso existam colaboradores vinculados, você poderá ter problemas.', () => {
+      this.cargosService.excluir(id).subscribe({
         next: () => {
           this.closeConfirmModal();
-          this.carregarTipos();
+          this.carregarCargos();
           // Se estava editando o mesmo que foi excluido, reseta
-          if (this.novoTipo.idTipoColaborador === id) {
-            this.cancelarEdicaoTipo();
+          if (this.novoCargo.idCargoColaborador === id) {
+            this.cancelarEdicaoCargo();
           }
         },
         error: (err: any) => {
@@ -288,11 +632,11 @@ export class DespesasViagensComponent implements OnInit {
   
   colaboradorModalMode: 'create' | 'edit' = 'create';
   isColaboradorModalOpen = false;
-  novoColaborador: any = { nome: '', idCentroCusto: null, idTipoColaborador: null };
+  novoColaborador: any = { nome: '', idCentroCusto: null, idCargoColaborador: null };
   isSalvandoColaborador = false;
 
   carregarColaboradores() {
-    this.colaboradoresService.listar(this.currentPage, this.itemsPerPage).subscribe({
+    this.colaboradoresService.listar(this.currentPage, this.itemsPerPage, this.searchTerm).subscribe({
       next: (res) => {
         this.listaColaboradores = res.items;
         this.totalColaboradores = res.total;
@@ -321,7 +665,7 @@ export class DespesasViagensComponent implements OnInit {
       this.novoColaborador = { ...colaborador };
     } else {
       this.colaboradorModalMode = 'create';
-      this.novoColaborador = { nome: '', idCentroCusto: null, idTipoColaborador: null, idUnidade: null };
+      this.novoColaborador = { nome: '', idCentroCusto: null, idCargoColaborador: null, idUnidade: null };
     }
     this.isColaboradorModalOpen = true;
   }
@@ -622,19 +966,140 @@ export class DespesasViagensComponent implements OnInit {
   }
 
   // ==========================================
-  // OUTROS / MOCKS ANTIGOS (Importação, etc)
+  // OUTROS / MOCKS ANTIGOS E EMPRESAS DA API
   // ==========================================
-  empresas = [
-    { nome: 'Cartão Corporativo BB', icon: 'fa-solid fa-credit-card' },
-    { nome: 'Cartão Corporativo Santa Maria', icon: 'fa-regular fa-credit-card' },
-    { nome: 'Kinto', icon: 'fa-solid fa-car-side' },
-    { nome: 'Localiza', icon: 'fa-solid fa-car' },
-    { nome: 'Maiorca', icon: 'fa-solid fa-map-location-dot' },
-    { nome: 'Onfly', icon: 'fa-solid fa-plane-departure' },
-    { nome: 'DV', icon: 'fa-solid fa-file-invoice-dollar' },
-    { nome: 'Sem Parar', icon: 'fa-solid fa-road-barrier' },
-    { nome: 'Tastur', icon: 'fa-solid fa-ticket' }
-  ];
+  empresas: Empresa[] = [];
+  
+  // Variáveis para a aba de Configuração de Empresas
+  searchEmpresaConfig = '';
+  currentEmpresaConfigPage = 1;
+  itemsEmpresaConfigPerPage = 10;
+  totalEmpresasConfig = 0;
+  totalEmpresaConfigPages = 1;
+  listaEmpresasConfig: Empresa[] = [];
+
+  empresaModalMode: 'create' | 'edit' = 'create';
+  isEmpresaModalOpen = false;
+  novaEmpresa: any = { nome: '', descricao: '' };
+  isSalvandoEmpresa = false;
+
+  carregarEmpresasConfig() {
+    this.empresasService.listar(this.currentEmpresaConfigPage, this.itemsEmpresaConfigPerPage, this.searchEmpresaConfig).subscribe({
+      next: (res) => {
+        this.listaEmpresasConfig = res.items;
+        this.totalEmpresasConfig = res.total;
+        this.totalEmpresaConfigPages = res.total_pages;
+      },
+      error: (err) => console.error('Erro ao carregar empresas para config', err)
+    });
+  }
+
+  onSearchEmpresaConfigChange(term: string) {
+    this.searchEmpresaConfig = term;
+    this.currentEmpresaConfigPage = 1;
+    this.carregarEmpresasConfig();
+  }
+
+  goToEmpresaConfigPage(page: number) {
+    if (page >= 1 && page <= this.totalEmpresaConfigPages) {
+      this.currentEmpresaConfigPage = page;
+      this.carregarEmpresasConfig();
+    }
+  }
+
+  openEmpresaModal(empresa?: Empresa) {
+    if (empresa) {
+      this.empresaModalMode = 'edit';
+      this.novaEmpresa = { ...empresa };
+    } else {
+      this.empresaModalMode = 'create';
+      this.novaEmpresa = { nome: '', descricao: '' };
+    }
+    this.isEmpresaModalOpen = true;
+  }
+
+  closeEmpresaModal() {
+    this.isEmpresaModalOpen = false;
+  }
+
+  salvarEmpresa() {
+    this.isSalvandoEmpresa = true;
+    if (this.empresaModalMode === 'create') {
+      this.empresasService.criar(this.novaEmpresa).subscribe({
+        next: () => {
+          this.isSalvandoEmpresa = false;
+          this.closeEmpresaModal();
+          this.carregarEmpresasConfig();
+          this.carregarEmpresas(); // Atualiza os cards
+        },
+        error: (err) => { console.error(err); this.isSalvandoEmpresa = false; }
+      });
+    } else {
+      this.empresasService.atualizar(this.novaEmpresa.idEmpresas, this.novaEmpresa).subscribe({
+        next: () => {
+          this.isSalvandoEmpresa = false;
+          this.closeEmpresaModal();
+          this.carregarEmpresasConfig();
+          this.carregarEmpresas(); // Atualiza os cards
+        },
+        error: (err) => { console.error(err); this.isSalvandoEmpresa = false; }
+      });
+    }
+  }
+
+  confirmarExclusaoEmpresa(id: number) {
+    this.openConfirmModal('Excluir Empresa', 'Tem certeza que deseja excluir esta Empresa (fatura/extrato)?', () => {
+      this.empresasService.excluir(id).subscribe({
+        next: () => {
+          this.closeConfirmModal();
+          this.carregarEmpresasConfig();
+          this.carregarEmpresas(); // Atualiza os cards
+        },
+        error: (err) => {
+          console.error(err);
+          this.isConfirmLoading = false;
+        }
+      });
+    });
+  }
+
+  confirmarExclusaoImportacao(id: number) {
+    this.openConfirmModal('Excluir Importação', 'Tem certeza que deseja excluir esta importação? Isso apagará permanentemente todas as movimentações e despesas associadas a ela.', () => {
+      this.importacoesService.excluir(id).subscribe({
+        next: () => {
+          this.closeConfirmModal();
+          this.carregarImportacoes(); // Atualiza a grid
+          this.carregarEmpresas(); // Atualiza os cards
+        },
+        error: (err) => {
+          console.error(err);
+          this.isConfirmLoading = false;
+        }
+      });
+    });
+  }
+
+  carregarEmpresas() {
+    this.empresasService.listar(1, 100).subscribe({
+      next: (res) => {
+        this.empresas = res.items.map(e => {
+          // Mapeia alguns ícones baseados no nome da empresa por padrão visual
+          let icon = 'fa-solid fa-building';
+          const nomeLower = e.nome.toLowerCase();
+          
+          if (nomeLower.includes('cartão') || nomeLower.includes('bb')) icon = 'fa-solid fa-credit-card';
+          else if (nomeLower.includes('kinto') || nomeLower.includes('localiza')) icon = 'fa-solid fa-car';
+          else if (nomeLower.includes('onfly')) icon = 'fa-solid fa-plane-departure';
+          else if (nomeLower.includes('dv') || nomeLower.includes('despesa')) icon = 'fa-solid fa-file-invoice-dollar';
+          else if (nomeLower.includes('sem parar')) icon = 'fa-solid fa-road-barrier';
+          else if (nomeLower.includes('tastur') || nomeLower.includes('viagem')) icon = 'fa-solid fa-ticket';
+          
+          return { ...e, icon };
+        });
+      },
+      error: (err) => console.error('Erro ao carregar empresas', err)
+    });
+  }
 
 
 
@@ -643,11 +1108,10 @@ export class DespesasViagensComponent implements OnInit {
   uploadState: 'idle' | 'processing' | 'done' = 'idle';
   currentProcessingStep = 0;
   processingSteps = [
-    'Importando Dados',
-    'Inteligência Artificial analisando dados',
-    'Interpretando dados importados',
-    'Gravando dados',
-    'Finalizando Importação'
+    'Importando arquivo selecionado',
+    'Inteligência Artificial analisando dados (pode levar alguns segundos)',
+    'Interpretando resposta e formatando tabela',
+    'Pronto para conferência'
   ];
 
   openImportModal(empresa: any) {
@@ -655,24 +1119,117 @@ export class DespesasViagensComponent implements OnInit {
     this.isImportModalOpen = true;
     this.uploadState = 'idle';
     this.currentProcessingStep = 0;
+    this.selectedFileName = '';
   }
 
   closeImportModal() {
     this.isImportModalOpen = false;
   }
 
+  isSalvandoExtraidos = false;
+
+  salvarExtraidos() {
+    if (this.despesasExtraidas.length === 0) return;
+    
+    this.isSalvandoExtraidos = true;
+    this.importacoesService.salvarExtraidos(this.selectedFileName, this.despesasExtraidas).subscribe({
+      next: (res) => {
+        this.isSalvandoExtraidos = false;
+        this.closeImportModal();
+        this.despesasExtraidas = [];
+        this.selectedFileName = '';
+        this.carregarImportacoes(); // Recarrega a tabela de historico
+        // Como não temos um toast de sucesso global no momento, o modal se fechará e a grid atualizará.
+      },
+      error: (err) => {
+        this.isSalvandoExtraidos = false;
+        this.showErrorToast(err?.error?.detail || 'Erro ao salvar os dados. Verifique se todos os cadastros selecionados existem.');
+      }
+    });
+  }
+
+  @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+  despesasExtraidas: DespesaExtraida[] = [];
+  selectedFileName: string = '';
+
+  get totalDespesasExtraidas(): number {
+    return this.despesasExtraidas.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+  }
+
+  hasColaborador(nome: string): boolean {
+    return this.listaColaboradoresGeral.some(c => c.nome === nome);
+  }
+
+  hasEmpresa(nome: string): boolean {
+    return this.listaEmpresasGeral.some(e => e.nome === nome);
+  }
+
+  hasCategoria(nome: string): boolean {
+    return this.listaCategoriasGeral.some(c => c.nome === nome);
+  }
+
+  selectedFile: File | null = null;
+
+  onFileSelected(event: any) {
+    const file = event.target.files[0];
+    if (file) {
+      this.selectedFileName = file.name;
+      this.selectedFile = file;
+    } else {
+      this.selectedFileName = '';
+      this.selectedFile = null;
+    }
+  }
+
+  toastMessage: string | null = null;
+  showErrorToast(msg: string) {
+    this.toastMessage = msg;
+    setTimeout(() => this.toastMessage = null, 5000);
+  }
+
   iniciarProcessamento() {
+    if (!this.selectedFile) {
+      this.showErrorToast("Por favor, selecione um arquivo primeiro.");
+      return;
+    }
+
+    const file = this.selectedFile;
     this.uploadState = 'processing';
     this.currentProcessingStep = 0;
     
-    const stepInterval = setInterval(() => {
-      this.currentProcessingStep++;
-      if (this.currentProcessingStep >= this.processingSteps.length) {
-        clearInterval(stepInterval);
-        this.uploadState = 'done';
-        setTimeout(() => this.closeImportModal(), 2000);
-      }
-    }, 1500);
+    // Passo 0 para Passo 1
+    setTimeout(() => {
+      this.currentProcessingStep = 1;
+      
+      const nomeEmpresa = this.empresaSelecionada?.nome || 'Empresa Desconhecida';
+      this.importacoesService.analisarExtrato(file, nomeEmpresa).subscribe({
+        next: (res) => {
+          if (res.sucesso) {
+            // Arredondando todos os valores retornados para 2 casas decimais
+            this.despesasExtraidas = res.dados.map((d: any) => ({
+              ...d,
+              valor: Number(parseFloat(d.valor).toFixed(2))
+            }));
+            
+            this.currentProcessingStep = 2; // Interpretando...
+            setTimeout(() => {
+              this.currentProcessingStep = 3; // Pronto para conferência...
+              setTimeout(() => {
+                this.uploadState = 'done';
+              }, 600);
+            }, 600);
+          } else {
+            this.showErrorToast('Erro ao processar arquivo pela IA.');
+            this.uploadState = 'idle';
+          }
+        },
+        error: (err) => {
+          console.error(err);
+          this.showErrorToast(err?.error?.detail || 'Erro de conexão ou processamento com a IA. Tente novamente.');
+          this.uploadState = 'idle';
+        }
+      });
+    }, 500);
   }
 
   isImportColabModalOpen = false;
@@ -776,5 +1333,186 @@ export class DespesasViagensComponent implements OnInit {
       this.uploadColabState = 'error';
       this.uploadColabError = 'Erro ao conectar ao servidor.';
     }
+  }
+
+  // Ações do Dashboard
+  async exportToPDF() {
+    if (!this.dashboardContent) return;
+
+    try {
+      const element = this.dashboardContent.nativeElement;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      const pdf = new jsPDF('l', 'mm', 'a4'); // landscape
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save('dashboard-despesas-viagens.pdf');
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+    }
+  }
+
+  toggleFullscreen() {
+    const elem = this.dashboardWrapper?.nativeElement;
+    
+    if (!document.fullscreenElement) {
+      if (elem?.requestFullscreen) {
+        elem.requestFullscreen().catch((err: any) => {
+          console.error(`Erro ao tentar entrar em modo tela cheia: ${err.message}`);
+        });
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  }
+
+  onDataInicioChange() {
+    if (this.dashDataInicio && this.dashDataFim && this.dashDataInicio > this.dashDataFim) {
+      this.dashDataFim = this.dashDataInicio;
+    }
+    this.activePeriodShortcut = 'personalizado';
+    if (this.isPeriodoValido()) {
+      this.carregarDadosDashboard();
+    }
+  }
+
+  onDataFimChange() {
+    this.activePeriodShortcut = 'personalizado';
+    if (this.isPeriodoValido()) {
+      this.carregarDadosDashboard();
+    }
+  }
+
+  onShortcutSelectChange(val: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado' | 'personalizado') {
+    if (val && val !== 'personalizado') {
+      this.selecionarAtalhoPeriodo(val);
+    }
+  }
+
+  isPeriodoValido(): boolean {
+    if (!this.dashDataInicio && !this.dashDataFim) {
+      return true;
+    }
+    return !!this.dashDataInicio && !!this.dashDataFim && this.dashDataInicio <= this.dashDataFim;
+  }
+
+  selecionarAtalhoPeriodo(shortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado') {
+    const today = new Date();
+    
+    const getPastDate = (monthsAgo: number) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - monthsAgo);
+      return d;
+    };
+
+    if (shortcut === 'ultimo-bimestre') {
+      this.dashDataInicio = getPastDate(2);
+      this.dashDataFim = today;
+    } else if (shortcut === 'ultimo-semestre') {
+      this.dashDataInicio = getPastDate(6);
+      this.dashDataFim = today;
+    } else if (shortcut === 'este-ano') {
+      this.dashDataInicio = new Date(today.getFullYear(), 0, 1);
+      this.dashDataFim = new Date(today.getFullYear(), 11, 31);
+    } else if (shortcut === 'ano-passado') {
+      this.dashDataInicio = new Date(today.getFullYear() - 1, 0, 1);
+      this.dashDataFim = new Date(today.getFullYear() - 1, 11, 31);
+    }
+
+    this.activePeriodShortcut = shortcut;
+    this.carregarDadosDashboard();
+  }
+
+  selecionarCategoria(name: string, id: number) {
+    if (this.selectedCategoryId === id) {
+      this.selectedCategoryName = null;
+      this.selectedCategoryId = null;
+    } else {
+      this.selectedCategoryName = name;
+      this.selectedCategoryId = id;
+      this.carregarDetalhesCategoria();
+    }
+  }
+
+  carregarDetalhesCategoria() {
+    if (!this.selectedCategoryId) return;
+    
+    this.categoryDetailsLoading = true;
+    
+    const filtros: any = {
+      id_categoria: this.selectedCategoryId
+    };
+    if (this.dashDataInicio) {
+      filtros.data_inicio = this.formatDate(this.dashDataInicio);
+    }
+    if (this.dashDataFim) {
+      filtros.data_fim = this.formatDate(this.dashDataFim);
+    }
+    if (this.dashFiltroEmpresa) {
+      filtros.id_empresa = this.dashFiltroEmpresa;
+    }
+    if (this.dashFiltroPessoa) {
+      filtros.id_colaborador = this.dashFiltroPessoa;
+    }
+    
+    this.importacoesService.obterDadosDashboard(filtros).subscribe({
+      next: (res) => {
+        this.categoryVisaoGeral = {
+          total: res.dashVisaoGeral.total,
+          quantidadeDespesas: res.dashVisaoGeral.quantidadeDespesas,
+          ticketMedio: res.dashVisaoGeral.ticketMedio,
+          maiorDespesa: res.dashVisaoGeral.maiorDespesa,
+          maiorDespesaContexto: res.dashVisaoGeral.maiorDespesaContexto
+        };
+        this.categoryTabelaDespesas = res.tabelaMaioresDespesas;
+        this.categorySpenders = res.spenders || [];
+        
+        // Configurar gráfico de barras horizontal de Despesas por Empresa na categoria
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899'];
+        this.categoryEmpresasOption = {
+          color: colors,
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { top: 20, left: 10, right: 20, bottom: 20, containLabel: true },
+          xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
+          yAxis: { type: 'category', data: (res.donutEmpresas || []).map((e: any) => e.name), axisLine: { show: false }, axisTick: { show: false } },
+          series: [
+            {
+              name: 'Valor',
+              type: 'bar',
+              barWidth: '60%',
+              label: {
+                show: true,
+                position: 'right',
+                formatter: (params: any) => {
+                  const val = params.value;
+                  return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                },
+                fontSize: 10,
+                color: '#64748b'
+              },
+              data: (res.donutEmpresas || []).map((e: any) => e.value)
+            }
+          ]
+        };
+        
+        this.categoryDetailsLoading = false;
+        this.isDashboardLoading = false;
+      },
+      error: (err) => {
+        console.error('Erro ao carregar detalhes da categoria', err);
+        this.categoryDetailsLoading = false;
+        this.isDashboardLoading = false;
+      }
+    });
   }
 }

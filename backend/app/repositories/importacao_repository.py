@@ -24,3 +24,11 @@ class ImportacaoRepository:
         items = query.order_by(Importacao.idImportacoes.desc()).offset(offset).limit(size).all()
         
         return items, total
+
+    def delete(self, id_importacao: int) -> bool:
+        importacao = self.db.query(Importacao).filter(Importacao.idImportacoes == id_importacao).first()
+        if importacao:
+            self.db.delete(importacao)
+            self.db.commit()
+            return True
+        return False

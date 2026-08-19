@@ -2,6 +2,11 @@
   <ol>
     <li><a routerLink="/">Início</a></li>
     <li class="separator">/</li>
-    <li class="current" aria-current="page">{{ currentPageName() }}</li>
+    <li class="current" aria-current="page">
+      @if (currentIcon()) {
+        <i [class]="currentIcon()" style="margin-right: 6px; color: #64748b;"></i>
+      }
+      {{ currentPageName() }}
+    </li>
   </ol>
 </nav>

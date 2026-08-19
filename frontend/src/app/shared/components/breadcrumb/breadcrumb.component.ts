@@ -15,6 +15,7 @@ export class BreadcrumbComponent implements OnInit {
   private activatedRoute = inject(ActivatedRoute);
 
   currentPageName = signal('Página Atual');
+  currentIcon = signal<string | null>(null);
 
   ngOnInit() {
     this.updateBreadcrumb();
@@ -31,6 +32,9 @@ export class BreadcrumbComponent implements OnInit {
       route = route.firstChild;
     }
     const breadcrumbName = route.snapshot.data['breadcrumb'];
+    const icon = route.snapshot.data['icon'];
+    this.currentIcon.set(icon || null);
+    
     if (breadcrumbName) {
       this.currentPageName.set(breadcrumbName);
     } else {

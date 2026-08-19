@@ -16,8 +16,8 @@ class CategoriaService:
     def get_categorias(self, page: int = 1, page_size: int = 20, search: str = None) -> CategoriaPaginatedResponse:
         if page < 1:
             page = 1
-        if page_size > 100:
-            page_size = 100
+        if page_size > 2000:
+            page_size = 2000
             
         skip = (page - 1) * page_size
         items, total = self.repository.get_all(skip=skip, limit=page_size, search=search)

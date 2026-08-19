@@ -1,0 +1,144 @@
+<div class="page-container">
+  
+  <!-- Page Header -->
+  <header class="page-header-premium">
+    <div class="title-row">
+      <div class="header-info">
+        <h1>Plano de Saúde</h1>
+        <span class="page-description">Importação, conciliação e gestão de faturas, mensalidades e apólices de operadoras de saúde e vida.</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Grid of 7 Health Plan Cards -->
+  <div class="content-wrapper">
+    <div class="health-plans-grid">
+      @for (card of cards(); track card.id) {
+        <app-card [padding]="true" class="health-card hover-lift">
+          <div class="card-content">
+            <div class="card-header-row">
+              <div class="icon-wrap" [class]="card.colorClass">
+                <i [class]="card.icon"></i>
+              </div>
+              <app-badge [variant]="card.statusVariant" [text]="card.statusText"></app-badge>
+            </div>
+            
+            <div class="info-wrap">
+              <h3>{{ card.name }}</h3>
+              <p>{{ card.description }}</p>
+            </div>
+            
+            <div class="card-action-row mt-3">
+              <app-button 
+                variant="primary" 
+                size="sm" 
+                icon="fa-solid fa-cloud-arrow-up"
+                (clicked)="triggerImport(card)">
+                Importar
+              </app-button>
+            </div>
+          </div>
+        </app-card>
+      }
+    </div>
+  </div>
+
+  <!-- Hidden File Input -->
+  <input type="file" #fileInput style="display: none;" accept=".xlsx, .xls, .csv, .pdf" (change)="onFileSelected($event)">
+
+  <!-- Import Processing Modal -->
+  <app-modal 
+    [isOpen]="isUploadModalOpen()" 
+    [title]="'Importação - ' + (activeCard()?.name || '')" 
+    size="sm" 
+    (closed)="!isProcessing() ? closeModal() : null">
+    
+    <div class="text-center py-3">
+      
+      <!-- STEP: FILE SELECTED / READY TO PROCESS -->
+      @if (processingStep() === 0) {
+        <div class="text-primary mb-3">
+          <i class="fa-regular fa-file-excel fs-1"></i>
+        </div>
+        <h4 class="mb-2">{{ activeCard()?.name }}</h4>
+        <p class="text-muted small">
+          Arquivo carregado: <strong>{{ selectedFile()?.name }}</strong>
+        </p>
+        <p class="text-muted small px-3">
+          Confirme abaixo para iniciar o processamento e a conciliação automatizada deste arquivo.
+        </p>
+        
+        <div class="mt-4 d-flex justify-content-center gap-2">
+          <app-button variant="secondary" (clicked)="closeModal()">
+            Cancelar
+          </app-button>
+          <app-button variant="primary" (clicked)="processFile()">
+            Processar
+          </app-button>
+        </div>
+      }
+      
+      <!-- STEP: PROCESSING / LOADING -->
+      @else if (isProcessing()) {
+        <div class="processing-spinner mb-3">
+          <app-loading type="spinner" size="lg"></app-loading>
+        </div>
+        <h4 class="mb-2">Processando arquivo...</h4>
+        <div class="progress-steps-list text-start mx-auto mt-4 px-3" style="max-width: 320px;">
+          <div class="step-item" [class.active]="processingStep() === 1" [class.done]="processingStep() > 1">
+            <i class="fa-solid" [class.fa-spinner]="processingStep() === 1" [class.fa-circle-notch]="processingStep() === 1" [class.fa-spin]="processingStep() === 1" [class.fa-check]="processingStep() > 1"></i>
+            <span>Leitura e estrutura</span>
+          </div>
+          <div class="step-item" [class.active]="processingStep() === 2" [class.done]="processingStep() > 2">
+            <i class="fa-solid" [class.fa-spinner]="processingStep() === 2" [class.fa-circle-notch]="processingStep() === 2" [class.fa-spin]="processingStep() === 2" [class.fa-check]="processingStep() > 2" [class.fa-circle]="processingStep() < 2"></i>
+            <span>Cruzamento com folha</span>
+          </div>
+          <div class="step-item" [class.active]="processingStep() === 3" [class.done]="processingStep() > 3">
+            <i class="fa-solid" [class.fa-spinner]="processingStep() === 3" [class.fa-circle-notch]="processingStep() === 3" [class.fa-spin]="processingStep() === 3" [class.fa-check]="processingStep() > 3" [class.fa-circle]="processingStep() < 3"></i>
+            <span>Apurando coparticipações</span>
+          </div>
+        </div>
+        <p class="text-muted small mt-4 px-3 italic">
+          {{ processingText() }}
+        </p>
+      }
+      
+      <!-- STEP: SUCCESS / REPORT -->
+      @else if (processingStep() === 4) {
+        <div class="text-success mb-3">
+          <i class="fa-solid fa-circle-check fs-1"></i>
+        </div>
+        <h4 class="mb-2 text-success">Importação Concluída</h4>
+        <p class="text-muted small px-3">
+          O demonstrativo da <strong>{{ activeCard()?.name }}</strong> foi processado e conciliado com sucesso no sistema.
+        </p>
+        
+        <div class="import-summary-box mx-auto my-4 p-3 bg-light rounded text-start" style="max-width: 320px;">
+          <div class="summary-row d-flex justify-content-between mb-2">
+            <span class="text-secondary small">Total Processado:</span>
+            <span class="fw-semibold">{{ importedCount() }} registros</span>
+          </div>
+          <div class="summary-row d-flex justify-content-between">
+            <span class="text-secondary small">Divergências Encontradas:</span>
+            @if (divergencesCount() > 0) {
+              <span class="text-warning fw-semibold d-flex align-items-center gap-1">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                {{ divergencesCount() }} pendentes
+              </span>
+            } @else {
+              <span class="text-success fw-semibold">Nenhuma</span>
+            }
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <app-button variant="secondary" (clicked)="closeModal()">
+            Fechar Relatório
+          </app-button>
+        </div>
+      }
+
+    </div>
+  </app-modal>
+
+</div>

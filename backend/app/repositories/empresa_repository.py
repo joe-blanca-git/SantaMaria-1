@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import List, Tuple, Optional
 from datetime import datetime
 from app.models.empresa import Empresa
@@ -12,9 +12,23 @@ class EmpresaRepository:
     def get_by_id(self, idEmpresas: int) -> Optional[Empresa]:
         return self.db.query(Empresa).filter(Empresa.idEmpresas == idEmpresas).first()
 
-    def get_all(self, skip: int = 0, limit: int = 20) -> Tuple[List[Empresa], int]:
-        total = self.db.query(func.count(Empresa.idEmpresas)).scalar()
-        items = self.db.query(Empresa).offset(skip).limit(limit).all()
+    def get_by_nome(self, nome: str) -> Optional[Empresa]:
+        return self.db.query(Empresa).filter(Empresa.nome == nome).first()
+
+    def get_all(self, skip: int = 0, limit: int = 20, search: Optional[str] = None) -> Tuple[List[Empresa], int]:
+        query = self.db.query(Empresa)
+        
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Empresa.nome.ilike(search_term),
+                    Empresa.descricao.ilike(search_term)
+                )
+            )
+            
+        total = query.with_entities(func.count(Empresa.idEmpresas)).scalar()
+        items = query.offset(skip).limit(limit).all()
         return items, total
 
     def create(self, empresa_in: EmpresaCreate) -> Empresa:

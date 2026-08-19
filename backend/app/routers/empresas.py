@@ -9,13 +9,16 @@ router = APIRouter()
 def get_service(db: Session = Depends(get_db)):
     return EmpresaService(db)
 
+from typing import Optional
+
 @router.get("", response_model=EmpresaPaginatedResponse)
 def list_empresas(
     page: int = 1,
     page_size: int = 20,
+    q: Optional[str] = None,
     service: EmpresaService = Depends(get_service)
 ):
-    return service.get_empresas(page=page, page_size=page_size)
+    return service.get_empresas(page=page, page_size=page_size, search=q)
 
 @router.post("", response_model=EmpresaResponse, status_code=status.HTTP_201_CREATED)
 def create_empresa(

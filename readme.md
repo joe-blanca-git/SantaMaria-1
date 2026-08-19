@@ -1,4 +1,4 @@
-# ERP Modular
+# ERP Modular — SantaMaria
 
 > Plataforma ERP moderna, modular e escalável desenvolvida para centralizar e automatizar processos do dia a dia através de módulos independentes.
 
@@ -10,634 +10,102 @@ O ERP Modular nasceu com o objetivo de ser uma plataforma única para desenvolvi
 
 Diferente de sistemas desenvolvidos para resolver apenas uma necessidade específica, este projeto foi concebido como uma plataforma de longo prazo, preparada para crescer de forma organizada, mantendo alta qualidade de código, facilidade de manutenção e excelente experiência para o usuário.
 
-A ideia principal é possuir um único sistema contendo autenticação, gerenciamento de usuários, controle de permissões, navegação padronizada e uma arquitetura capaz de suportar dezenas de módulos independentes.
-
-Todo o desenvolvimento seguirá princípios modernos de arquitetura de software, priorizando baixo acoplamento, alta coesão e reutilização de componentes.
-
----
-
-# Objetivos
-
-* Desenvolver uma plataforma ERP modular.
-* Permitir a criação de módulos independentes.
-* Centralizar autenticação e gerenciamento de usuários.
-* Facilitar futuras integrações com APIs externas.
-* Garantir escalabilidade para crescimento contínuo do sistema.
-* Padronizar componentes, layouts e fluxo de navegação.
-* Manter código limpo, organizado e de fácil manutenção.
+Todo o desenvolvimento segue princípios modernos de arquitetura de software, priorizando baixo acoplamento, alta coesão e reutilização de componentes.
 
 ---
 
 # Tecnologias Utilizadas
 
 ## Frontend
-
 * Angular (última versão estável)
-* Standalone Components
-* Angular Signals
-* Angular Router
-* RxJS
-* SCSS
-* Angular CDK
-* Font Awesome
-* Angular Animations
+* Standalone Components e Angular Signals
+* Angular Router, RxJS, SCSS
+* Componentização responsiva e Mobile First
+* Estrutura preparada para Control Flow (`@if`, `@for`, `@switch`)
 
-### Características
-
-* Mobile First
-* Lazy Loading
-* Typed Forms
-* Control Flow (`@if`, `@for`, `@switch`)
-* Change Detection OnPush
-* Componentização
-* Responsividade
-* Estrutura preparada para PWA
-
----
-
-## Backend
-
-* Python
-* FastAPI
-* Uvicorn
-* Pydantic
-
-### Características
-
-* API REST
-* Documentação automática (Swagger/OpenAPI)
-* Arquitetura em camadas
-* Validação automática
-* Programação assíncrona (Async/Await)
-* Alta performance
-
----
+## Backend (Mapeado via Auditoria Técnica)
+* **Framework Web:** Python, FastAPI e Uvicorn (Arquitetura REST assíncrona)
+* **ORM e Validação:** SQLAlchemy, PyMySQL e Pydantic
+* **Gerenciamento de Configuração:** Pydantic-Settings (`.env`)
+* **Processamento de Dados:** Pandas e OpenPyXL (para leitura em massa de arquivos de Excel)
+* **Upload e Files:** Python-Multipart
+* **Inteligência Artificial:** SDK `google-genai` (Modelo *Gemini-3.5-flash*)
 
 ## Banco de Dados
-
-* MySQL
-
-### Diretrizes
-
-* UTF8MB4
-* Foreign Keys
-* Constraints
-* Índices
-* Soft Delete
-* Auditoria
-* Integridade referencial
-
-Toda a regra de negócio permanecerá no banco MySQL.
+* **MySQL** acessado via SQLAlchemy.
+* Uso massivo de Foreign Keys e Relacionamentos para garantir a integridade entre as entidades (Empresas, Unidades, Centros de Custo, Colaboradores, Cargos, Categorias e Movimentações).
+* Mecanismo de *Connection Pooling* para estabilidade (`pool_recycle`).
 
 ---
 
-## Autenticação
+# Arquitetura e Estrutura do Backend
 
-O sistema utilizará o **Supabase Authentication** exclusivamente como provedor de identidade.
+O backend foi implementado utilizando **Service Layer** aliada ao **Repository Pattern**, desacoplando rotas, lógica de negócios e persistência.
 
-Serão utilizados apenas os recursos relacionados à autenticação.
+O fluxo de dados segue rigorosamente a estrutura:
+`Requisição HTTP → Router → Validação (Pydantic Schema) → Service → Repository → SQLAlchemy Model → Banco de Dados`
 
-### Responsabilidades do Supabase
+```text
+backend/app/
+├── core/           # Configurações globais (database.py, config.py)
+├── models/         # Entidades e mapeamento do banco (Tabelas SQLAlchemy)
+├── schemas/        # Contratos de DTO (Pydantic) para in e out da API
+├── repositories/   # Isola as queries e interações com o banco
+├── services/       # Contém as regras de negócio e integrações complexas
+└── routers/        # Controladores e Endpoints REST da aplicação
+```
 
-* Cadastro de usuários
-* Login
-* Logout
-* Recuperação de senha
-* Refresh Token
-* Emissão e validação de JWT
+### Endpoints da API REST
+Todas as rotas nascem versionadas através do prefixo `/api/v1/`.
 
-Nenhuma informação de negócio será armazenada no Supabase.
-
-Todos os dados do ERP permanecerão exclusivamente no MySQL.
+* **APIs de Cadastros Base**: `/categorias`, `/empresas`, `/unidades`, `/centros-custo`, `/cargos-colaboradores`. (Rotas CRUD padronizadas).
+* **Colaboradores (`/colaboradores`)**: Além do CRUD, contém rota inteligente `/upload` que varre planilhas complexas, cria vínculos ausentes no banco em tempo real (como Centros de Custo que faltam) e retorna os resultados por stream (`NDJSON`).
+* **Importações Inteligentes (`/importacoes`)**: Endpoint `/ia/analise-extrato` dedicado à recepção de faturas (PDF) onde um prompt injeta no Gemini os domínios do banco e força que a IA devolva as despesas classificadas estruturalmente em JSON, seguido pela rota `/ia/salvar` para consolidá-las.
 
 ---
 
-# Arquitetura Geral
+# Integrações e Processamento Avançado (IA e Big Data)
 
-```
-                Angular
-                    │
-             JWT Authentication
-                    │
-                    ▼
-              FastAPI REST API
-                    │
-                    ▼
-                 MySQL
-```
+O ERP SantaMaria lida com cargas complexas de dados de duas maneiras exclusivas no backend:
 
-O fluxo de autenticação será realizado entre Angular e Supabase, enquanto todas as funcionalidades do ERP serão consumidas através da API FastAPI.
+1. **Processamento de Arquivos em Lote (Excel/Pandas)**
+As rotas de importação (como de colaboradores) usam Pandas internamente para varrer grandes tabelas. Ao longo da leitura, é utilizado um `StreamingResponse` no FastAPI que jorra eventos (NDJSON) progressivos. O Frontend Angular capta esses eventos pela `Web API (fetch / ReadableStream)` para mostrar na tela o andamento instantâneo da importação (Spinners/Steps).
+
+2. **Inteligência Artificial Generativa**
+A rota de leitura de extratos consome os serviços do *Google Gemini*. Como medida de segurança contra *alucinações da IA*, o backend constrói dinamicamente um array contendo as categorias e nomes de colaboradores *verdadeiros* cadastrados no banco antes de realizar o envio (`ia_service.py`). Assim, o modelo é forçado a mapear as despesas encontradas na fatura associando-as obrigatoriamente a chaves reais do sistema. Em caso de restrição de Cota de API (`429`), o sistema possui mecanismo automático de **Retry Exponencial**.
 
 ---
 
-# Princípios Arquiteturais
+# Segurança e Autenticação (Aviso Crítico)
 
-Todo o projeto seguirá os seguintes princípios:
-
-* Separação de responsabilidades
-* Baixo acoplamento
-* Alta coesão
-* Código limpo (Clean Code)
-* SOLID
-* DRY (Don't Repeat Yourself)
-* KISS (Keep It Simple)
-* Convention over Configuration
-* Componentização
-* Reutilização
-* Escalabilidade
-* Segurança
-* Performance
+> **ATENÇÃO TÉCNICA (Auditoria):** Atualmente (Fase 1 do Backend), a aplicação FastAPI **não possui validação de rotas, middlewares de login ou JWT implementados**. Todos os endpoints são integralmente públicos. 
+A configuração de CORS (`main.py`) também é permissiva (`["*"]`). A implementação do **Supabase Authentication** (originalmente planejado) para bloqueio e identidade ainda consta no *roadmap* como pendente e deve ser a maior prioridade de infraestrutura e arquitetura de segurança antes da transição para produção.
 
 ---
 
-# Estrutura do Backend
+# Estrutura do Frontend Angular
 
-A API será organizada em camadas bem definidas.
-
-```
-app/
-
-├── api/
-├── core/
-├── config/
-├── database/
-├── middlewares/
-├── models/
-├── repositories/
-├── schemas/
-├── security/
-├── services/
-├── utils/
-├── migrations/
-└── tests/
-```
-
-## Responsabilidades
-
-### API
-
-Recebe as requisições HTTP.
-
-### Services
-
-Contêm toda a regra de negócio.
-
-### Repositories
-
-Responsáveis pelo acesso ao banco de dados.
-
-### Models
-
-Representação das entidades.
-
-### Schemas
-
-Validação de entrada e saída utilizando Pydantic.
-
-### Security
-
-JWT, autenticação e autorização.
-
-### Core
-
-Configurações globais.
-
-### Middlewares
-
-Interceptação das requisições.
-
-### Utils
-
-Funções auxiliares reutilizáveis.
-
----
-
-# Estrutura do Frontend
-
-```
+```text
 src/
-
-├── core/
-├── shared/
-├── layout/
-├── modules/
-├── pages/
-├── assets/
-├── styles/
-└── environments/
+├── core/         # Infraestrutura global, interceptors, autenticação
+├── shared/       # Componentes visuais genéricos (Botões, Modais, Tabelas, Inputs)
+├── layout/       # Estruturas padrão (Header, Sidebar, Footer)
+└── modules/      # Domínios de negócio isolados (financeiro, despesas, etc)
 ```
 
-## Core
-
-Contém toda infraestrutura utilizada apenas uma vez.
-
-Exemplos:
-
-* Guards
-* Interceptors
-* Serviços globais
-* Configurações
-* Constantes
-* Autenticação
+O Frontend possui gerenciamento através de **Angular Signals** e adota o padrão **Mobile First**, suportando resoluções de desktop até smartphones. O Layout utiliza menus recolhíveis, skeleton loaders e feedbacks em mensagens de `toast` para alta qualidade UX.
 
 ---
 
-## Shared
-
-Componentes reutilizáveis.
-
-Exemplos:
-
-* Botões
-* Inputs
-* Pipes
-* Diretivas
-* Utilitários
-* Interfaces
-* Validators
-
----
-
-## Layout
-
-Componentes estruturais do sistema.
-
-* Header
-* Sidebar
-* Footer
-* Breadcrumb
-* Loading Global
-
----
-
-## Modules
-
-Cada módulo será completamente independente.
-
-```
-modules/
-
-financeiro/
-
-crm/
-
-estoque/
-
-juridico/
-
-projetos/
-
-...
-```
-
-Cada módulo possuirá sua própria estrutura:
-
-```
-pages/
-
-components/
-
-services/
-
-models/
-
-routes/
-```
-
----
-
-# API REST
-
-Todas as APIs seguirão o padrão REST.
-
-Métodos utilizados:
-
-* GET
-* POST
-* PUT
-* PATCH
-* DELETE
-
-Todas as respostas seguirão um padrão único para facilitar o consumo pelo frontend.
-
----
-
-# Versionamento
-
-Todas as APIs nascerão versionadas.
-
-Exemplo:
-
-```
-/api/v1/auth
-
-/api/v1/users
-
-/api/v1/home
-```
-
-Isso permitirá evolução futura sem quebra de compatibilidade.
-
----
-
-# Segurança
-
-O projeto deverá seguir boas práticas de segurança.
-
-Incluindo:
-
-* JWT
-* HTTPS
-* Refresh Token
-* CORS
-* Rate Limit
-* Sanitização
-* Validação de entrada
-* Tratamento global de exceções
-* Proteção contra requisições inválidas
-
----
-
-# Auditoria
-
-Todas as entidades deverão estar preparadas para auditoria.
-
-Campos previstos:
-
-* created_at
-* updated_at
-* deleted_at
-* created_by
-* updated_by
-* deleted_by
-
-Mesmo que inicialmente alguns campos ainda não sejam utilizados.
-
----
-
-# Usuários
-
-A plataforma possuirá gerenciamento próprio de usuários.
-
-Cada usuário poderá possuir futuramente:
-
-* Nome
-* E-mail
-* Foto
-* Cargo
-* Status
-* Módulos habilitados
-* Permissões
-* Último acesso
-* Preferências
-* Tema escolhido
-* Idioma
-
----
-
-# Página Inicial (Home)
-
-A Home será o ponto central do ERP.
-
-Ela não pertence a nenhum módulo específico.
-
-Sua função será apresentar informações relevantes ao usuário.
-
-Inicialmente será composta por:
-
-* Header
-* Sidebar
-* Breadcrumb
-* Cards
-* Perfil do usuário
-* Módulos disponíveis
-* Últimos acessos
-* Atalhos
-* Área para notificações
-* Área para avisos
-* Área destinada a futuros dashboards
-
----
-
-# Layout
-
-O layout seguirá uma estrutura única para todo o sistema.
-
-```
-Header
-
-Sidebar
-
-Breadcrumb
-
-Conteúdo
-
-Footer
-```
-
-Características:
-
-* Sidebar recolhível
-* Totalmente responsivo
-* Navegação intuitiva
-* Layout consistente em todos os módulos
-
----
-
-# Gerenciamento de Estado
-
-O projeto utilizará prioritariamente **Angular Signals** para gerenciamento de estado local e compartilhado.
-
-Bibliotecas mais complexas de gerenciamento global somente serão adotadas caso a evolução do projeto realmente justifique.
-
----
-
-# Componentes Base
-
-Todos os componentes compartilhados seguirão o mesmo padrão visual.
-
-Exemplos:
-
-* Button
-* Input
-* Select
-* Checkbox
-* Radio
-* Card
-* Modal
-* Drawer
-* Table
-* Toast
-* Confirm Dialog
-* Loading
-* Skeleton
-* Empty State
-* Error State
-* Paginação
-
----
-
-# Experiência do Usuário
-
-O sistema deverá oferecer uma experiência moderna.
-
-Características previstas:
-
-* Skeleton Loading
-* Loading Global
-* Loading Local
-* Feedback visual imediato
-* Mensagens amigáveis
-* Animações leves
-* Navegação rápida
-* Interface limpa
-* Consistência visual
-
----
-
-# Responsividade
-
-O sistema será desenvolvido utilizando abordagem Mobile First.
-
-Compatibilidade prevista:
-
-* Desktop
-* Notebook
-* Tablet
-* Smartphone
-
----
-
-# Internacionalização
-
-A arquitetura será preparada para múltiplos idiomas.
-
-Idioma inicial:
-
-* Português (Brasil)
-
-Idiomas futuros:
-
-* Inglês
-* Espanhol
-
----
-
-# Performance
-
-Desde o início serão adotadas práticas para manter alto desempenho.
-
-* Lazy Loading
-* OnPush
-* Signals
-* TrackBy
-* Paginação
-* Virtual Scroll
-* Compressão de recursos
-* Cache quando aplicável
-
----
-
-# Qualidade de Código
-
-O projeto seguirá padrões rígidos de desenvolvimento.
-
-* ESLint
-* Prettier
-* Conventional Commits
-* Organização por responsabilidade
-* Componentização
-* Nomenclatura padronizada
-* Código limpo
-* Comentários apenas quando realmente necessários
-
----
-
-# Testes
-
-A arquitetura será preparada para suportar:
-
-* Testes Unitários
-* Testes de Integração
-* Testes End-to-End (E2E)
-
-Mesmo que não sejam implementados na primeira fase do projeto.
-
----
-
-# Roadmap Inicial
-
-## Fase 1 — Fundação
-
-* Configuração do repositório
-* Estrutura do Angular
-* Estrutura do FastAPI
-* Configuração do MySQL
-* Configuração do Supabase Auth
-* Definição dos padrões de desenvolvimento
-* Configuração do ambiente de desenvolvimento
-
----
-
-## Fase 2 — Autenticação
-
-* Cadastro
-* Login
-* Logout
-* Recuperação de senha
-* Refresh Token
-* Guards
-* Interceptors
-
----
-
-## Fase 3 — Plataforma Base
-
-* Layout principal
-* Header
-* Sidebar
-* Footer
-* Breadcrumb
-* Página Home
-* Perfil do usuário
-* Menu dinâmico
-* Estrutura inicial de notificações
-
----
-
-## Fase 4 — Infraestrutura para Módulos
-
-* Estrutura para novos módulos
-* Controle de permissões
-* Componentes compartilhados
-* Registro de módulos
-* Navegação desacoplada
+# Princípios Arquiteturais e Qualidade de Código
+
+* **SOLID e DRY**: Segregação severa de interfaces no TS e de camadas Repository/Service no Python.
+* **Componentização e Reutilização**: Proibição de recriar modais e tabelas soltas; tudo deriva de `shared/components`.
+* **Desempenho e Lazy Loading**: Módulos acessados sob demanda na web e banco consultado via pools persistentes.
+* **Semântica e Tratamentos de Exceções**: Retornos paginados uniformes (`Items, Page, Size, TotalPages`) na API para facilitar acoplamento no Typescript. Pydantic Models garantem 100% de sanitização nos dados de entrada.
 
 ---
 
 # Filosofia do Projeto
 
-Este ERP não será apenas um sistema, mas uma plataforma em constante evolução.
-
-Cada módulo deverá ser desenvolvido de forma independente, seguindo os mesmos padrões arquiteturais e visuais, garantindo consistência, escalabilidade e facilidade de manutenção.
-
-Todas as decisões técnicas serão tomadas priorizando simplicidade, qualidade de código e preparação para crescimento a longo prazo, evitando soluções improvisadas e reduzindo o custo de manutenção conforme a plataforma evoluir.
-
----
-
-# Ambiente e Integração com API (Módulo de Despesas de Viagens)
-
-O projeto frontend possui configuração de múltiplos ambientes (`environment.ts` para desenvolvimento local e `environment.prod.ts` para produção) para o consumo da API FastAPI (`stamariabd`). 
-
-Atualmente, o **Módulo de Despesas de Viagens** possui integração completa com as seguintes APIs:
-* **Categorias** (`/api/v1/categorias`): CRUD completo de categorias de despesas.
-* **Colaboradores** (`/api/v1/colaboradores`): CRUD completo de colaboradores com paginação.
-* **Tipos de Colaborador** (`/api/v1/tipos-colaboradores`): Lista e criação de tipos de vínculo a partir do cadastro do colaborador.
-* **Centros de Custo** (`/api/v1/centros-custo`): CRUD completo de centros de custo.
-* **Unidades** (`/api/v1/unidades`): CRUD completo de unidades de negócio.
-* **Importação em Lote via Excel**: Integração inteligente utilizando FastAPI `StreamingResponse` (retornando NDJSON) que envia o status de cada etapa (Análise, Validação e Atualização) para o frontend (via `fetch` / `ReadableStream`), permitindo feedback em tempo real (spinner step-by-step). Suporta auto-criação de registros pendentes (ex: Centros de Custo não encontrados).
-
-Para executar o sistema localmente integrado à API:
-1. Inicie o servidor FastAPI na porta 8000 (o Angular apontará por padrão para `http://127.0.0.1:8000/api/v1`).
-2. Execute o frontend Angular com `npm run start` (ou equivalente).
-3. (Opcional) Para build de produção, certifique-se de configurar a `apiUrl` correta no `environment.prod.ts`.
+Este ERP não é apenas um sistema, mas uma plataforma em constante evolução. Cada módulo deve ser desenvolvido de forma independente, seguindo os mesmos padrões arquiteturais (FastAPI Service Layer no backend, Angular Signals/Standalone no frontend), garantindo consistência, escalabilidade e facilidade de manutenção a longo prazo, evitando soluções improvisadas.

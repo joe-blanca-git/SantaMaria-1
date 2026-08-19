@@ -1,0 +1,161 @@
+@import 'styles/variables';
+
+.page-container {
+  padding: 2rem 2.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+// ----------------------------------------------------
+// Page Header Styling (SaaS Edge-to-edge / Breathable)
+// ----------------------------------------------------
+.page-header-premium {
+  margin-bottom: 2.5rem;
+
+  .title-row {
+    h1 {
+      font-size: 1.75rem;
+      font-weight: $font-weight-semibold;
+      color: $gray-900;
+      margin: 0 0 0.5rem 0;
+      letter-spacing: -0.025em;
+    }
+
+    .page-description {
+      font-size: 0.925rem;
+      color: $gray-500;
+      display: block;
+    }
+  }
+}
+
+// ----------------------------------------------------
+// Health Plans Grid
+// ----------------------------------------------------
+.health-plans-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+
+  .health-card {
+    border: 1px solid $gray-200;
+    border-radius: 12px;
+    background-color: $white;
+    transition: $transition-base;
+    overflow: hidden;
+
+    &.hover-lift:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.03);
+      border-color: $gray-300;
+    }
+
+    .card-content {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 200px;
+      justify-content: space-between;
+
+      .card-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1.25rem;
+
+        .icon-wrap {
+          width: 44px;
+          height: 44px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.15rem;
+        }
+      }
+
+      .info-wrap {
+        flex-grow: 1;
+        margin-bottom: 1.5rem;
+
+        h3 {
+          font-size: 1.05rem;
+          font-weight: $font-weight-semibold;
+          color: $gray-800;
+          margin: 0 0 0.5rem 0;
+        }
+
+        p {
+          font-size: 0.85rem;
+          color: $gray-500;
+          line-height: 1.5;
+          margin: 0;
+        }
+      }
+
+      .card-action-row {
+        border-top: 1px solid $gray-100;
+        padding-top: 1rem;
+        display: flex;
+        justify-content: flex-start;
+      }
+    }
+  }
+}
+
+// ----------------------------------------------------
+// Modal Processing Styles
+// ----------------------------------------------------
+.progress-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: $gray-400;
+    font-size: 0.9rem;
+    transition: color 0.3s ease;
+    
+    i {
+      font-size: 0.95rem;
+      width: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    &.active {
+      color: $primary;
+      font-weight: $font-weight-medium;
+      
+      i {
+        animation: spin 1s linear infinite;
+      }
+    }
+    
+    &.done {
+      color: $success;
+    }
+  }
+}
+
+.import-summary-box {
+  border: 1px solid $gray-200;
+  
+  .summary-row {
+    font-size: 0.9rem;
+  }
+}
+
+.italic {
+  font-style: italic;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}

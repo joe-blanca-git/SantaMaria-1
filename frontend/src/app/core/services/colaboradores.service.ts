@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { TipoColaborador } from './tipos-colaboradores.service';
+import { CargoColaborador } from './cargos-colaboradores.service';
 import { CentroCusto } from './centros-custo.service';
 import { Unidade } from './unidades.service';
 
@@ -10,9 +10,9 @@ export interface Colaborador {
   idColaborador?: number;
   nome: string;
   idCentroCusto: number;
-  idTipoColaborador: number;
+  idCargoColaborador: number;
   idUnidade?: number;
-  tipo_colaborador?: TipoColaborador;
+  cargo_colaborador?: CargoColaborador;
   centro_custo?: CentroCusto;
   unidade?: Unidade;
 }
@@ -37,8 +37,12 @@ export class ColaboradoresService {
     return this.apiUrl;
   }
 
-  listar(page = 1, pageSize = 10): Observable<PaginatedResponse<Colaborador>> {
-    return this.http.get<PaginatedResponse<Colaborador>>(`${this.apiUrl}?page=${page}&page_size=${pageSize}`);
+  listar(page = 1, pageSize = 10, search: string = ''): Observable<PaginatedResponse<Colaborador>> {
+    let url = `${this.apiUrl}?page=${page}&page_size=${pageSize}`;
+    if (search) {
+      url += `&q=${encodeURIComponent(search)}`;
+    }
+    return this.http.get<PaginatedResponse<Colaborador>>(url);
   }
 
   buscarPorId(id: number): Observable<Colaborador> {

@@ -4,6 +4,12 @@
 // Este arquivo centraliza TODAS as variáveis e injeta
 // no Bootstrap 5 para manter consistência absoluta.
 
+@import 'styles/colors';
+@import 'styles/spacing';
+@import 'styles/typography';
+@import 'styles/theme';
+
+
 // 1. Cores Base (Paleta Premium Light)
 $blue:        #2563eb; // Primary - Azul Vibrante e Sofisticado
 $indigo:      #4f46e5;

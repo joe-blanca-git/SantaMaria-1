@@ -3,6 +3,12 @@
 // Importa FontAwesome Base CSS
 @import '@fortawesome/fontawesome-free/css/all.min.css';
 
+// Importa ng-select theme
+@import "@ng-select/ng-select/themes/default.theme.css";
+
+// Importa ngx-daterangepicker-material base css (removido)
+@import "flatpickr/dist/flatpickr.min.css";
+
 // 1. Variáveis customizadas (overrides do Bootstrap)
 @import 'styles/variables';
 

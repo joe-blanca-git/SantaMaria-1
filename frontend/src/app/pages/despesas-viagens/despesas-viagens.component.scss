@@ -4,91 +4,161 @@
   padding: 0;
   max-width: 1400px;
   margin: 0 auto;
-  padding-top: 1.5rem;
+  margin-top: -0.75rem; /* Margem negativa para puxar o conteúdo para perto do breadcrumb */
   padding-bottom: 3rem;
 }
 
 /* ==========================================================================
-   1. CABEÇALHO (PAGE HEADER)
+   1. CABEÇALHO (PAGE HEADER PREMIUM)
    ========================================================================== */
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 2rem;
+.page-header-premium {
+  margin-bottom: 1.5rem;
 
-  .header-icon {
-    width: 48px;
-    height: 48px;
-    background-color: rgba($primary, 0.06);
-    border: 1px solid rgba($primary, 0.1);
-    color: $primary;
-    border-radius: 12px;
+  .title-row {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    flex-shrink: 0;
-  }
+    
+    i {
+      font-size: 0.875rem;
+      color: $gray-400;
+    }
 
-  .header-text {
     .page-title {
-      font-size: 1.5rem; /* 24px */
+      font-size: 1.125rem; /* 18px */
       font-weight: 600;
-      color: $gray-900;
-      margin: 0 0 0.25rem 0;
-      letter-spacing: -0.02em;
+      color: $gray-800;
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+
+    .divider {
+      margin: 0 0.5rem;
+      color: $gray-300;
+      font-size: 0.875rem;
+      font-weight: 300;
     }
 
     .page-description {
-      font-size: 0.875rem; /* 14px */
+      font-size: 0.8125rem; /* 13px */
       color: $gray-500;
       margin: 0;
+      font-weight: 400;
     }
   }
 }
 
 /* ==========================================================================
-   2. ABAS (TABS)
+   2. LAYOUT PRINCIPAL (VERTICAL TABS)
    ========================================================================== */
-.tabs-container {
-  border-bottom: 1px solid $border-color;
-  margin-bottom: 2rem;
-
-  .custom-tabs {
-    display: flex;
+.main-layout {
+  display: flex;
+  gap: 2rem;
+  
+  @media (max-width: 768px) {
+    flex-direction: column;
     gap: 1.5rem;
-    list-style: none;
-    padding: 0;
-    margin: 0;
+  }
+}
 
-    .nav-item {
-      .nav-link {
-        background: transparent;
-        border: none;
-        padding: 0.75rem 0;
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: $gray-500;
-        border-bottom: 2px solid transparent;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
+.main-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-x: hidden;
 
-        i {
-          font-size: 1rem;
-        }
+  @media (max-width: 768px) {
+    width: 100%;
+  }
 
-        &:hover {
-          color: $gray-700;
-        }
+  .sidebar-header {
+    .sidebar-toggle:hover {
+      background: $gray-100 !important;
+    }
+  }
 
-        &.active {
-          color: $primary;
-          border-bottom-color: $primary;
-        }
+  &.collapsed {
+    width: 60px;
+
+    .sidebar-header {
+      justify-content: center !important;
+    }
+
+    .main-nav-link {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+      justify-content: center;
+
+      i {
+        margin-right: 0;
+        font-size: 1.25rem;
       }
+
+      .nav-text {
+        opacity: 0;
+        width: 0;
+        visibility: hidden;
+      }
+    }
+  }
+}
+
+.main-content {
+  flex-grow: 1;
+  min-width: 0;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-nav {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  li {
+    width: 100%;
+  }
+
+  .main-nav-link {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    color: $gray-600;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+
+    i {
+      width: 20px;
+      text-align: center;
+      margin-right: 0.75rem;
+      font-size: 1.1rem;
+      transition: margin 0.3s ease;
+    }
+
+    .nav-text {
+      transition: opacity 0.2s ease, width 0.2s ease;
+      opacity: 1;
+      width: auto;
+    }
+
+    &:hover {
+      background: rgba($gray-100, 0.6);
+      color: $gray-900;
+    }
+
+    &.active {
+      background: rgba($primary, 0.08);
+      color: $primary;
+      font-weight: 600;
     }
   }
 }
@@ -375,37 +445,22 @@
 }
 
 /* =========================================
-   CONFIGURAÇÕES LAYOUT (Vertical Tabs)
+   CONFIGURAÇÕES LAYOUT (Horizontal Tabs)
 ========================================= */
 .config-layout {
   display: flex;
-  gap: 2rem;
-  margin-top: 1rem;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 0;
   min-height: 500px;
-  
-  @media (max-width: 768px) {
-    flex-direction: column;
-    gap: 1.5rem;
-  }
 }
 
 .config-sidebar {
-  width: 240px;
-  flex-shrink: 0;
-  
-  @media (max-width: 768px) {
-    width: 100%;
-  }
+  width: 100%;
 }
 
 .config-sidebar-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: $gray-500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 1rem;
-  padding-left: 0.5rem;
+  display: none;
 }
 
 .config-nav {
@@ -413,20 +468,23 @@
   padding: 0;
   margin: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-bottom: 1px solid $border-color;
+  padding-bottom: 1rem;
 }
 
 .config-nav-item {
-  width: 100%;
+  width: auto;
 }
 
 .config-nav-link {
-  width: 100%;
-  text-align: left;
+  width: auto;
+  text-align: center;
   background: transparent;
   border: none;
-  padding: 0.625rem 0.75rem;
+  padding: 0.625rem 1rem;
   border-radius: 8px;
   color: $gray-600;
   font-weight: 500;
@@ -621,5 +679,402 @@
       color: $gray-700;
       cursor: pointer;
     }
+  }
+}
+
+/* Custom NgSelect Override para design SaaS limpo */
+::ng-deep .custom-ng-select {
+  .ng-select-container {
+    background-color: #f8fafc;
+    border: none;
+    border-radius: 6px;
+    box-shadow: none !important;
+    min-height: 32px;
+    height: 32px;
+    padding-left: 0.25rem;
+    cursor: pointer;
+
+    .ng-value-container {
+      padding-left: 0;
+      justify-content: center;
+      .ng-value {
+        font-size: 0.85rem;
+        font-weight: 500;
+        text-align: center;
+        width: 100%;
+      }
+      .ng-input {
+        input {
+          text-align: center;
+        }
+      }
+    }
+  }
+
+  &.ng-select-opened {
+    .ng-select-container {
+      background-color: #f1f5f9;
+    }
+  }
+
+  .ng-arrow-wrapper {
+    display: none; /* Remove a setinha pra ficar bem minimalista */
+  }
+}
+
+/* =========================================
+   DASHBOARD VISÃO GERAL (PREMIUM UI)
+========================================= */
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid $border-color;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
+  
+  .config-nav {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+}
+
+.filters-panel-card {
+  background-color: $white;
+  border: 1px solid rgba($border-color, 0.8);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  
+  .filters-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .filter-group {
+    width: 200px;
+    max-width: 100%;
+    
+    &.period-filter-group {
+      width: auto;
+    }
+
+    .filter-label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: $gray-500;
+      margin-bottom: 0.35rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    
+    .period-inputs {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      
+      @media (max-width: 576px) {
+        flex-direction: column;
+        align-items: stretch;
+        
+        .input-icon-wrapper {
+          width: 100% !important;
+        }
+        .period-separator {
+          display: none;
+        }
+      }
+    }
+
+    .form-control, .form-select {
+      height: 38px;
+      border-radius: 8px;
+      border: 1px solid $border-color;
+      background-color: $white;
+      color: $gray-800;
+      font-size: 0.875rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+      transition: all 0.2s;
+      
+      &:focus {
+        border-color: rgba($primary, 0.5);
+        box-shadow: 0 0 0 3px rgba($primary, 0.1);
+        outline: none;
+      }
+    }
+
+    .input-icon-wrapper {
+      position: relative;
+      
+      .input-icon {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: $gray-400;
+        font-size: 0.9rem;
+      }
+      
+      input {
+        padding-left: 2.25rem !important;
+      }
+    }
+
+    .shortcut-select {
+      width: 150px;
+      flex-shrink: 0;
+      @media (max-width: 768px) {
+        width: 100% !important;
+      }
+    }
+  }
+}
+
+.dashboard-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+
+  @media (max-width: 1200px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dash-card {
+  background: $white;
+  border-radius: 10px;
+  border: 1px solid rgba($border-color, 0.8);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.02);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s;
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02);
+    border-color: rgba($primary, 0.2);
+  }
+
+  .dash-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+
+    .dash-card-title {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: $gray-500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0;
+    }
+
+    .icon-wrapper {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+    }
+  }
+
+    .dash-card-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    flex-grow: 1;
+
+    .dash-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: $gray-900;
+      margin: 0 0 0.15rem 0;
+      letter-spacing: -0.01em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .dash-subtitle {
+      font-size: 0.7rem;
+      margin: 0;
+    }
+
+    .dash-trend {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-top: 0.1rem;
+      
+      &.trend-up {
+        color: $danger;
+      }
+      &.trend-down {
+        color: $success;
+      }
+      
+      span {
+        color: $gray-500;
+        font-weight: 500;
+      }
+    }
+  }
+}
+
+// Chart Cards
+.dash-chart-card {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0, 0.1);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.02);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .dash-chart-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid rgba(0,0,0, 0.05);
+
+    .dash-chart-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #334155;
+      margin: 0;
+    }
+  }
+
+  .dash-chart-body {
+    flex-grow: 1;
+    padding: 1rem;
+    position: relative;
+    min-height: 180px;
+
+    .chart-container {
+      width: 100%;
+      height: 100%;
+      min-height: 180px;
+    }
+  }
+
+  &.table-card {
+    .dash-chart-body {
+      padding: 0;
+    }
+  }
+}
+
+// Custom Premium Table
+.custom-table {
+  font-size: 0.85rem;
+  
+  thead {
+    th {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      font-weight: 600;
+      border-bottom-width: 1px;
+      border-bottom-color: rgba(0,0,0, 0.1);
+      padding: 1rem 1.25rem;
+      background-color: rgba(248,250,252, 0.5);
+    }
+  }
+
+  tbody {
+    td {
+      padding: 0.85rem 1.25rem;
+      border-bottom-color: rgba(241,245,249, 0.8);
+      color: #475569;
+      vertical-align: middle;
+    }
+    
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background-color: rgba(248,250,252, 0.8);
+    }
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fullscreen Mode Styles */
+.config-layout.fullscreen-mode {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999 !important;
+  background-color: #f8fafc !important; /* Lighter background for dashboard */
+  padding: 2rem !important;
+  overflow-y: auto !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  
+  .dashboard-actions .btn {
+    background-color: #fff;
+  }
+}
+
+/* Estilos específicos da aba Categorias */
+.ranking-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+  
+  &:hover td {
+    background-color: rgba(59, 130, 246, 0.04) !important;
+  }
+  
+  &.selected-row td {
+    background-color: rgba(59, 130, 246, 0.08) !important;
+  }
+}
+
+.no-selection-banner {
+  border: 2px dashed rgba(226, 232, 240, 0.8) !important;
+  background-color: #f8fafc;
+  transition: all 0.3s ease;
+}
+
+.category-details-panel {
+  animation: slideDown 0.3s ease-out;
+  
+  .details-loading-overlay {
+    border-radius: 12px;
+  }
+}
+
+.spenders-item {
+  transition: background-color 0.2s ease;
+  
+  &:hover {
+    background-color: #f8fafc;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

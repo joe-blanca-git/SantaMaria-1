@@ -21,6 +21,18 @@ export interface ImportacaoPaginatedResponse {
   total_pages: number;
 }
 
+export interface DespesaExtraida {
+  empresa: string;
+  colaborador: string;
+  categoria: string;
+  valor: number;
+}
+
+export interface AnaliseExtratoResponse {
+  sucesso: boolean;
+  dados: DespesaExtraida[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -39,5 +51,88 @@ export class ImportacoesService {
     }
     
     return this.http.get<ImportacaoPaginatedResponse>(this.apiUrl, { params });
+  }
+
+  analisarExtrato(file: File, empresaNome: string): Observable<AnaliseExtratoResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('empresa_nome', empresaNome);
+    
+    return this.http.post<AnaliseExtratoResponse>(`${this.apiUrl}/ia/analise-extrato`, formData);
+  }
+
+  salvarExtraidos(nomeArquivo: string, despesas: DespesaExtraida[]): Observable<any> {
+    const payload = {
+      nomeArquivo,
+      despesas
+    };
+    return this.http.post(`${this.apiUrl}/ia/salvar`, payload);
+  }
+
+  excluir(id: number): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/${id}`);
+  }
+
+  obterDadosDashboard(filtros: any): Observable<any> {
+    let params = new HttpParams();
+    if (filtros.data_inicio) params = params.set('data_inicio', filtros.data_inicio);
+    if (filtros.data_fim) params = params.set('data_fim', filtros.data_fim);
+    if (filtros.id_empresa) params = params.set('id_empresa', filtros.id_empresa.toString());
+    if (filtros.id_colaborador) params = params.set('id_colaborador', filtros.id_colaborador.toString());
+    if (filtros.id_categoria) params = params.set('id_categoria', filtros.id_categoria.toString());
+    
+    return this.http.get<any>(`${this.apiUrl}/dashboard`, { params });
+  }
+
+  extrairAtacadao(file: File): Observable<Blob> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.apiUrl}/atacadao/extrair`, formData, {
+      responseType: 'blob'
+    });
+  }
+
+  extrairSendas(file: File): Observable<Blob> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.apiUrl}/sendas/extrair`, formData, {
+      responseType: 'blob'
+    });
+  }
+
+  conciliarProrrogacaoAtacadao(htmlFile: File, csvFile: File): Observable<Blob> {
+    const formData = new FormData();
+    formData.append('html_file', htmlFile);
+    formData.append('csv_file', csvFile);
+    return this.http.post(`${this.apiUrl}/atacadao/conciliar`, formData, {
+      responseType: 'blob'
+    });
+  }
+
+  conciliarProrrogacaoSendas(sendasFile: File, acrFile: File): Observable<Blob> {
+    const formData = new FormData();
+    formData.append('sendas_file', sendasFile);
+    formData.append('acr_file', acrFile);
+    return this.http.post(`${this.apiUrl}/sendas/conciliar`, formData, {
+      responseType: 'blob'
+    });
+  }
+
+  conciliarProrrogacaoMartminas(martminasFile: File, acrFile: File): Observable<Blob> {
+    const formData = new FormData();
+    formData.append('martminas_file', martminasFile);
+    formData.append('acr_file', acrFile);
+    return this.http.post(`${this.apiUrl}/martminas/conciliar`, formData, {
+      responseType: 'blob'
+    });
+  }
+
+  conciliarProrrogacaoSavegnago(savegnagoFile: File, acrFile: File): Observable<Blob> {
+    const formData = new FormData();
+    formData.append('savegnago_file', savegnagoFile);
+    formData.append('acr_file', acrFile);
+    return this.http.post(`${this.apiUrl}/savegnago/conciliar`, formData, {
+      responseType: 'blob'
+    });
   }
 }

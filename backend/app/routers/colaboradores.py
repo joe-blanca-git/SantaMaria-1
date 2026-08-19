@@ -14,20 +14,23 @@ import time
 from app.repositories.colaborador_repository import ColaboradorRepository
 from app.repositories.centro_custo_repository import centro_custo_repository
 from app.repositories.unidade_repository import unidade_repository
-from app.repositories.tipo_colaborador_repository import TipoColaboradorRepository
+from app.repositories.cargo_colaborador_repository import CargoColaboradorRepository
 
 router = APIRouter()
 
 def get_service(db: Session = Depends(get_db)):
     return ColaboradorService(db)
 
+from typing import Optional
+
 @router.get("", response_model=ColaboradorPaginatedResponse)
 def list_colaboradores(
     page: int = 1,
     page_size: int = 20,
+    q: Optional[str] = None,
     service: ColaboradorService = Depends(get_service)
 ):
-    return service.get_colaboradores(page=page, page_size=page_size)
+    return service.get_colaboradores(page=page, page_size=page_size, search=q)
 
 @router.post("", response_model=ColaboradorResponse, status_code=status.HTTP_201_CREATED)
 def create_colaborador(
@@ -72,7 +75,7 @@ async def upload_colaboradores(
     db: Session = Depends(get_db)
 ):
     colab_repo = ColaboradorRepository(db)
-    tipo_repo = TipoColaboradorRepository(db)
+    cargo_repo = CargoColaboradorRepository(db)
     
     # Lemos o conteúdo do arquivo ANTES de iniciar o generator
     # pois o FastAPI fecha o UploadFile quando a função termina de retornar
@@ -97,7 +100,7 @@ async def upload_colaboradores(
             yield json.dumps({"step": 0, "message": "Lendo arquivo..."}) + "\n"
             
             try:
-                df = pd.read_excel(io.BytesIO(file_content), sheet_name="Pessoas")
+                df = pd.read_excel(io.BytesIO(file_content), sheet_name="Pessoas", header=1)
             except Exception as e:
                 yield json.dumps({"step": 3, "status": "error", "message": f"Erro ao ler a aba 'Pessoas': {str(e)}"}) + "\n"
                 return
@@ -111,6 +114,9 @@ async def upload_colaboradores(
             cadastrados = 0
             ja_existentes = 0
             cc_cadastrados = 0
+            cargos_cadastrados = 0
+            
+            from app.schemas.cargo_colaborador import CargoColaboradorCreate
             
             for index, row in df.iterrows():
                 importados += 1
@@ -128,7 +134,7 @@ async def upload_colaboradores(
                     continue
                 
                 # Verifica o centro de custo
-                cc_codigo_str = str(row.get("Centro de custo", "")).strip()
+                cc_codigo_str = str(row.get("Centro de Custo", "")).strip()
                 if not cc_codigo_str or cc_codigo_str.lower() == 'nan':
                     yield json.dumps({"step": 3, "status": "error", "message": f"Centro de Custo não informado para o colaborador {nome}"}) + "\n"
                     return
@@ -142,7 +148,7 @@ async def upload_colaboradores(
                 cc = centro_custo_repository.get_by_codigo(db, cc_codigo)
                 if not cc:
                     # Ao invés de erro, cadastra o CC sem estado
-                    cc_nome = str(row.get("Descrição centro de custo", "")).strip()
+                    cc_nome = str(row.get("Descrição do centro de custo", "")).strip()
                     if not cc_nome or cc_nome.lower() == 'nan':
                         cc_nome = f"Centro de Custo {cc_codigo}"
                         
@@ -162,21 +168,22 @@ async def upload_colaboradores(
                     except ValueError:
                         pass # Ignora codigo de unidade invalido
                 
-                # Verifica Tipo
-                id_tipo = 8 # Padrão definido
-                tipo_str = str(row.get("Tipo", "")).strip()
+                # Verifica Cargo
+                id_cargo = 8 # Padrão definido
+                tipo_str = str(row.get("Cargo", "")).strip()
                 if tipo_str and tipo_str.lower() != 'nan':
-                    tipo_obj = tipo_repo.get_by_nome(tipo_str)
-                    if not tipo_obj:
-                        yield json.dumps({"step": 3, "status": "error", "message": f"Tipo de vínculo '{tipo_str}' não cadastrado. (Colaborador {nome})"}) + "\n"
-                        return
-                    id_tipo = tipo_obj.idTipoColaborador
+                    cargo_obj = cargo_repo.get_by_nome(tipo_str)
+                    if not cargo_obj:
+                        novo_cargo = CargoColaboradorCreate(nome=tipo_str, descricao="")
+                        cargo_obj = cargo_repo.create(novo_cargo)
+                        cargos_cadastrados += 1
+                    id_cargo = cargo_obj.idCargoColaborador
                 
                 colaboradores_to_add.append({
                     "nome": nome,
                     "idCentroCusto": cc.idCentroCusto,
                     "idUnidade": id_unidade,
-                    "idTipoColaborador": id_tipo
+                    "idCargoColaborador": id_cargo
                 })
             
             # Etapa 3: Atualizando
@@ -196,7 +203,8 @@ async def upload_colaboradores(
                     "importados": importados,
                     "cadastrados": cadastrados,
                     "ja_existentes": ja_existentes,
-                    "cc_cadastrados": cc_cadastrados
+                    "cc_cadastrados": cc_cadastrados,
+                    "cargos_cadastrados": cargos_cadastrados
                 }
             }) + "\n"
             

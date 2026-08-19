@@ -20,11 +20,11 @@ app.add_middleware(
 def root():
     return {"message": "SantaMaria API is running. Acesso a documentação em /docs"}
 
-from app.routers import categorias, empresas, tipos_colaboradores, colaboradores, centros_custo, unidades, importacoes
+from app.routers import categorias, empresas, cargos_colaboradores, colaboradores, centros_custo, unidades, importacoes
 
 app.include_router(categorias.router, prefix="/api/v1/categorias", tags=["Categorias"])
 app.include_router(empresas.router, prefix="/api/v1/empresas", tags=["Empresas"])
-app.include_router(tipos_colaboradores.router, prefix="/api/v1/tipos-colaboradores", tags=["Tipos de Colaboradores"])
+app.include_router(cargos_colaboradores.router, prefix="/api/v1/cargos-colaboradores", tags=["Cargos de Colaboradores"])
 app.include_router(colaboradores.router, prefix="/api/v1/colaboradores", tags=["Colaboradores"])
 app.include_router(centros_custo.router, prefix="/api/v1/centros-custo", tags=["Centros de Custo"])
 app.include_router(unidades.router, prefix="/api/v1/unidades", tags=["Unidades"])

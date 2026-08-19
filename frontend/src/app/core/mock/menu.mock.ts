@@ -52,6 +52,13 @@ export const MOCK_MENU: MenuItem[] = [
     ]
   },
   {
+    id: 'menu-extratores',
+    label: 'Extratores',
+    icon: 'fa-solid fa-file-import',
+    route: '/extratores',
+    order: 4
+  },
+  {
     id: 'menu-settings',
     label: 'Configurações',
     icon: 'fa-solid fa-gear',

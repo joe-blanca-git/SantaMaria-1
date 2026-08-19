@@ -1,9 +1,10 @@
-import { ApplicationConfig, provideZoneChangeDetection, LOCALE_ID } from '@angular/core';
+import { ApplicationConfig, provideZoneChangeDetection, LOCALE_ID, importProvidersFrom } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { routes } from './app.routes';
 import { registerLocaleData } from '@angular/common';
 import localePt from '@angular/common/locales/pt';
+import { NgxEchartsModule } from 'ngx-echarts';
 
 registerLocaleData(localePt);
 
@@ -32,6 +33,8 @@ import { MockDashboardService } from './core/services/mock-dashboard.service';
 
 import { authInterceptor } from './core/interceptors/auth.interceptor';
 
+import { FlatpickrModule } from 'angularx-flatpickr';
+
 export const appConfig: ApplicationConfig = {
   providers: [
     { provide: LOCALE_ID, useValue: 'pt-BR' },
@@ -50,6 +53,12 @@ export const appConfig: ApplicationConfig = {
     { provide: INotificationsService, useClass: MockNotificationsService },
     { provide: IMenuService, useClass: MockMenuService },
     { provide: IDashboardService, useClass: MockDashboardService },
-    { provide: IEnvironmentService, useClass: EnvironmentService }
+    { provide: IEnvironmentService, useClass: EnvironmentService },
+    importProvidersFrom(
+      NgxEchartsModule.forRoot({
+        echarts: () => import('echarts')
+      }),
+      FlatpickrModule.forRoot()
+    )
   ]
 };

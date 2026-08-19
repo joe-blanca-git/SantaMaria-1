@@ -12,6 +12,9 @@ class CategoriaRepository:
     def get_by_id(self, idCategorias: int) -> Optional[Categoria]:
         return self.db.query(Categoria).filter(Categoria.idCategorias == idCategorias).first()
 
+    def get_by_nome(self, nome: str) -> Optional[Categoria]:
+        return self.db.query(Categoria).filter(Categoria.nome == nome).first()
+
     def get_all(self, skip: int = 0, limit: int = 20, search: str = None) -> Tuple[List[Categoria], int]:
         query = self.db.query(Categoria)
         if search:

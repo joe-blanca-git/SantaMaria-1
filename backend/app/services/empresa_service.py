@@ -13,14 +13,14 @@ class EmpresaService:
             raise HTTPException(status_code=404, detail="Empresa não encontrada.")
         return empresa
 
-    def get_empresas(self, page: int = 1, page_size: int = 20):
+    def get_empresas(self, page: int = 1, page_size: int = 20, search: str = None):
         if page < 1:
             page = 1
-        if page_size > 100:
-            page_size = 100
+        if page_size > 2000:
+            page_size = 2000
             
         skip = (page - 1) * page_size
-        items, total = self.repository.get_all(skip=skip, limit=page_size)
+        items, total = self.repository.get_all(skip=skip, limit=page_size, search=search)
         
         total_pages = (total + page_size - 1) // page_size if total > 0 else 0
         
