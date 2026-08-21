@@ -1,29 +1,29 @@
 // Mapeamento Temático (Backgrounds, Componentes, Botões)
 
-$theme-bg: $color-gray-50;
-$theme-bg-dark: $color-gray-900;
-$theme-surface: $color-white;
-$theme-surface-dark: $color-gray-800;
-$theme-border: $color-gray-200;
+$theme-bg: var(--color-bg);
+$theme-bg-dark: var(--color-bg);
+$theme-surface: var(--color-surface);
+$theme-surface-dark: var(--color-surface);
+$theme-border: var(--color-border);
 
-$theme-text: $color-gray-900;
-$theme-text-muted: $color-gray-500;
+$theme-text: var(--color-text-primary);
+$theme-text-muted: var(--color-text-muted);
 
-$theme-sidebar-bg: $color-gray-900; // Sidebar escuro elegante
-$theme-sidebar-text: $color-gray-300;
-$theme-sidebar-hover: $color-gray-800;
-$theme-sidebar-active: $color-white;
+$theme-sidebar-bg: var(--color-surface);
+$theme-sidebar-text: var(--color-text-secondary);
+$theme-sidebar-hover: var(--color-surface-hover);
+$theme-sidebar-active: var(--color-primary);
 
-$theme-header-bg: $color-white;
-$theme-header-text: $color-gray-800;
+$theme-header-bg: var(--color-surface);
+$theme-header-text: var(--color-text-primary);
 
-$theme-card-bg: $color-white;
-$theme-card-border: $color-gray-200;
+$theme-card-bg: var(--color-surface);
+$theme-card-border: var(--color-border-light);
 
-$theme-btn-primary-bg: $color-primary;
-$theme-btn-primary-hover: $color-primary-dark;
-$theme-btn-primary-text: $color-white;
+$theme-btn-primary-bg: var(--color-primary);
+$theme-btn-primary-hover: var(--color-primary-hover);
+$theme-btn-primary-text: #ffffff;
 
-$theme-btn-secondary-bg: $color-gray-200;
-$theme-btn-secondary-hover: $color-gray-300;
-$theme-btn-secondary-text: $color-gray-800;
+$theme-btn-secondary-bg: var(--color-surface-hover);
+$theme-btn-secondary-hover: var(--color-border-light);
+$theme-btn-secondary-text: var(--color-text-primary);

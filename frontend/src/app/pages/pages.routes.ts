@@ -25,5 +25,15 @@ export const pagesRoutes: Routes = [
     path: 'extratores',
     loadComponent: () => import('./extratores/extratores.component').then(m => m.ExtratoresComponent),
     data: { breadcrumb: 'Extratores', icon: 'fa-solid fa-file-import' }
+  },
+  {
+    path: 'inadimplencia',
+    loadComponent: () => import('./inadimplencia/inadimplencia.component').then(m => m.InadimplenciaComponent),
+    data: { breadcrumb: 'Inadimplência', icon: 'fa-solid fa-file-invoice-dollar' }
+  },
+  {
+    path: 'conciliacao-pagamentos',
+    loadComponent: () => import('./conciliacao-pagamentos/conciliacao-pagamentos.component').then(m => m.ConciliacaoPagamentosComponent),
+    data: { breadcrumb: 'Conciliação de Pagamentos', icon: 'fa-solid fa-scale-balanced' }
   }
 ];

@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import or_
 from typing import List, Tuple
 from app.models.importacao import Importacao
@@ -21,7 +21,16 @@ class ImportacaoRepository:
         total = query.count()
         offset = (page - 1) * size
         # Order by idImportacoes desc to show latest first
-        items = query.order_by(Importacao.idImportacoes.desc()).offset(offset).limit(size).all()
+        items = (
+            query.options(
+                joinedload(Importacao.empresa),
+                selectinload(Importacao.movimentacoes)
+            )
+            .order_by(Importacao.idImportacoes.desc())
+            .offset(offset)
+            .limit(size)
+            .all()
+        )
         
         return items, total
 

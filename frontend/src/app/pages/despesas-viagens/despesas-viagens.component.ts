@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -27,6 +27,7 @@ import html2canvas from 'html2canvas';
 import { FlatpickrModule } from 'angularx-flatpickr';
 import { Portuguese } from 'flatpickr/dist/l10n/pt.js';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
+import { ThemeService } from '../../core/services/theme.service';
 
 @Component({
   selector: 'app-despesas-viagens',
@@ -39,10 +40,10 @@ export class DespesasViagensComponent implements OnInit {
   isDashboardLoading = false;
   activeTab: 'dashboard' | 'atualizacao' | 'configuracoes' = 'dashboard';
   activeConfigTab: 'colaboradores' | 'categorias' | 'centros-custo' | 'unidades' | 'empresas' = 'colaboradores';
-  activeDashboardTab: 'visao-geral' | 'categorias' | 'empresas' = 'visao-geral';
-  
-  isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null 
-    ? localStorage.getItem('sidebarCollapsed') === 'true' 
+  activeDashboardTab: 'visao-geral' | 'categorias' | 'comercial-marketing' = 'visao-geral';
+
+  isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null
+    ? localStorage.getItem('sidebarCollapsed') === 'true'
     : true;
 
   toggleSidebar(): void {
@@ -69,7 +70,7 @@ export class DespesasViagensComponent implements OnInit {
   dashDataInicio: Date | null = null;
   dashDataFim: Date | null = null;
   activePeriodShortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado' | 'personalizado' | null = null;
-  
+
   dashFiltroEmpresa: string = null as any;
   dashFiltroPessoa: string = null as any;
   dashFiltroCategoria: string = null as any;
@@ -115,8 +116,21 @@ export class DespesasViagensComponent implements OnInit {
   chartOptionDonutCategoria: EChartsOption = {};
   chartOptionDonutEmpresa: EChartsOption = {};
   chartOptionMapa: EChartsOption = {};
-  
+
   tabelaMaioresDespesas: any[] = [];
+
+  themeService = inject(ThemeService);
+
+  getThemeColors() {
+    const isDark = this.themeService.activeTheme() === 'dark';
+    return {
+      text: isDark ? '#cbd5e1' : '#64748b',
+      title: isDark ? '#f8fafc' : '#334155',
+      border: isDark ? '#334155' : '#cbd5e1',
+      borderLight: isDark ? '#0ea5e9' : '#f1f5f9',
+      pieBorderColor: isDark ? '#014f75' : '#fff'
+    };
+  }
 
   constructor(
     private http: HttpClient,
@@ -127,7 +141,21 @@ export class DespesasViagensComponent implements OnInit {
     private unidadesService: UnidadesService,
     private importacoesService: ImportacoesService,
     private empresasService: EmpresasService
-  ) {}
+  ) {
+    effect(() => {
+      // Registrar dependência reativa do Signal do tema
+      const theme = this.themeService.activeTheme();
+
+      // Forçar atualização dos gráficos recreando suas opções
+      if (this.activeTab === 'dashboard') {
+        this.carregarDadosDashboard();
+        if (this.selectedCategoryId) {
+          this.carregarDetalhesCategoria();
+        }
+        this.atualizarDadosAnalitico();
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.carregarColaboradores();
@@ -141,7 +169,10 @@ export class DespesasViagensComponent implements OnInit {
     this.carregarCategoriasGeral();
     this.carregarEmpresasGeral();
     this.carregarEmpresasConfig();
+    this.carregarCentrosCustoGeral();
+    this.carregarUnidadesGeral();
     this.selecionarAtalhoPeriodo('este-ano');
+    this.selecionarAtalhoPeriodoAnalitico('este-ano');
   }
 
   carregarDadosDashboard() {
@@ -153,7 +184,7 @@ export class DespesasViagensComponent implements OnInit {
     if (this.dashDataFim) {
       filtros.data_fim = this.formatDate(this.dashDataFim);
     }
-    
+
     if (this.dashFiltroEmpresa) {
       filtros.id_empresa = this.dashFiltroEmpresa;
     }
@@ -163,13 +194,13 @@ export class DespesasViagensComponent implements OnInit {
     if (this.dashFiltroCategoria) {
       filtros.id_categoria = this.dashFiltroCategoria;
     }
-    
+
     this.importacoesService.obterDadosDashboard(filtros).subscribe({
       next: (res) => {
         this.dashVisaoGeral = res.dashVisaoGeral;
         this.tabelaMaioresDespesas = res.tabelaMaioresDespesas;
         this.donutCategoriasTab = res.donutCategorias || [];
-        
+
         // Calcular Categoria com Maior Gasto
         if (res.donutCategorias && res.donutCategorias.length > 0) {
           let maxCat = res.donutCategorias[0];
@@ -195,15 +226,28 @@ export class DespesasViagensComponent implements OnInit {
         }
 
         const colors = ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899'];
-        
+        const themeColors = this.getThemeColors();
+        const isDark = this.themeService.activeTheme() === 'dark';
+
         // 1. Area Chart (Evolução)
         this.chartOptionArea = {
           color: colors,
           tooltip: { trigger: 'axis' },
-          legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: '#64748b' } },
+          legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: themeColors.text } },
           grid: { top: 30, left: 20, right: 20, bottom: 40, containLabel: true },
-          xAxis: { type: 'category', boundaryGap: false, data: res.evolucao.meses },
-          yAxis: { type: 'value', axisLabel: { formatter: 'R$ {value}' } },
+          xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: res.evolucao.meses,
+            axisLabel: { color: themeColors.text, fontSize: 11 },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: themeColors.border } }
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: { formatter: 'R$ {value}', color: themeColors.text, fontSize: 11 },
+            splitLine: { lineStyle: { color: themeColors.borderLight } }
+          },
           series: res.evolucao.series.map((s: any) => ({
             name: s.name,
             type: 'line',
@@ -217,10 +261,21 @@ export class DespesasViagensComponent implements OnInit {
         this.chartOptionAreaCategorias = {
           color: colors,
           tooltip: { trigger: 'axis' },
-          legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: '#64748b' } },
+          legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: themeColors.text } },
           grid: { top: 30, left: 20, right: 20, bottom: 40, containLabel: true },
-          xAxis: { type: 'category', boundaryGap: false, data: res.evolucao.meses },
-          yAxis: { type: 'value', axisLabel: { formatter: 'R$ {value}' } },
+          xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: res.evolucao.meses,
+            axisLabel: { color: themeColors.text, fontSize: 11 },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: themeColors.border } }
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: { formatter: 'R$ {value}', color: themeColors.text, fontSize: 11 },
+            splitLine: { lineStyle: { color: themeColors.borderLight } }
+          },
           series: res.evolucao.series.map((s: any) => ({
             name: s.name,
             type: 'line',
@@ -230,7 +285,7 @@ export class DespesasViagensComponent implements OnInit {
             data: s.data
           }))
         };
-        
+
         // 2. Donut Categorias
         this.chartOptionDonutCategoria = {
           color: colors,
@@ -241,13 +296,13 @@ export class DespesasViagensComponent implements OnInit {
               type: 'pie',
               radius: ['40%', '65%'],
               avoidLabelOverlap: true,
-              itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+              itemStyle: { borderRadius: 6, borderColor: themeColors.pieBorderColor, borderWidth: 2 },
               label: {
                 show: true,
                 position: 'outer',
                 formatter: '{b}\n{d}%',
                 fontSize: 10,
-                color: '#64748b'
+                color: themeColors.text
               },
               labelLine: { show: true, length: 8, length2: 8 },
               data: res.donutCategorias
@@ -264,20 +319,20 @@ export class DespesasViagensComponent implements OnInit {
               type: 'pie',
               radius: ['40%', '65%'],
               avoidLabelOverlap: true,
-              itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+              itemStyle: { borderRadius: 6, borderColor: themeColors.pieBorderColor, borderWidth: 2 },
               label: {
                 show: true,
                 position: 'outer',
                 formatter: '{b}\n{d}%',
                 fontSize: 10,
-                color: '#64748b'
+                color: themeColors.text
               },
               labelLine: { show: true, length: 8, length2: 8 },
               data: res.donutCategorias
             }
           ]
         };
-        
+
         // 3. Donut Empresas
         this.chartOptionDonutEmpresa = {
           color: ['#06b6d4', '#8b5cf6', '#f43f5e', '#eab308'],
@@ -288,27 +343,27 @@ export class DespesasViagensComponent implements OnInit {
               type: 'pie',
               radius: ['40%', '65%'],
               avoidLabelOverlap: true,
-              itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+              itemStyle: { borderRadius: 6, borderColor: themeColors.pieBorderColor, borderWidth: 2 },
               label: {
                 show: true,
                 position: 'outer',
                 formatter: '{b}\n{d}%',
                 fontSize: 10,
-                color: '#64748b'
+                color: themeColors.text
               },
               labelLine: { show: true, length: 8, length2: 8 },
               data: res.donutEmpresas
             }
           ]
         };
-        
+
         // 4. Map (chartOptionMapa)
         this.http.get('/maps/brazil.json').subscribe({
           next: (geoJson: any) => {
             echarts.registerMap('brazil', geoJson);
-            
+
             const maxVal = Math.max(1000, ...res.mapaData.map((d: any) => d.value));
-            
+
             this.chartOptionMapa = {
               tooltip: {
                 trigger: 'item',
@@ -322,7 +377,8 @@ export class DespesasViagensComponent implements OnInit {
                 text: ['Alto', 'Baixo'],
                 realtime: false,
                 calculable: true,
-                inRange: { color: ['#eff6ff', '#3b82f6', '#1e3a8a'] }
+                textStyle: { color: themeColors.text },
+                inRange: { color: isDark ? ['#172554', '#3b82f6', '#60a5fa'] : ['#eff6ff', '#3b82f6', '#1e3a8a'] }
               },
               series: [
                 {
@@ -335,7 +391,7 @@ export class DespesasViagensComponent implements OnInit {
                 }
               ]
             };
-            
+
             if (this.selectedCategoryId) {
               this.carregarDetalhesCategoria();
             } else {
@@ -375,7 +431,7 @@ export class DespesasViagensComponent implements OnInit {
     this.activeConfigTab = tab;
   }
 
-  setActiveDashboardTab(tab: 'visao-geral' | 'categorias' | 'empresas'): void {
+  setActiveDashboardTab(tab: 'visao-geral' | 'categorias' | 'comercial-marketing'): void {
     this.activeDashboardTab = tab;
   }
 
@@ -453,14 +509,14 @@ export class DespesasViagensComponent implements OnInit {
   carregarUnidadesGeral() {
     this.unidadesService.listar(1, 1000).subscribe({
       next: (res) => {
-        this.listaUnidadesGeral = res.items;
+        this.listaUnidadesGeral = (res.items || []).sort((a, b) => (a.descricao || '').localeCompare(b.descricao || ''));
       }
     });
   }
 
   listaColaboradoresGeral: Colaborador[] = [];
   carregarColaboradoresGeral() {
-    this.colaboradoresService.listar(1, 1000).subscribe({
+    this.colaboradoresService.listar(1, 2000).subscribe({
       next: (res) => this.listaColaboradoresGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
     });
   }
@@ -629,10 +685,10 @@ export class DespesasViagensComponent implements OnInit {
   totalColaboradores = 0;
   totalPages = 1;
   listaColaboradores: Colaborador[] = [];
-  
+
   colaboradorModalMode: 'create' | 'edit' = 'create';
   isColaboradorModalOpen = false;
-  novoColaborador: any = { nome: '', idCentroCusto: null, idCargoColaborador: null };
+  novoColaborador: any = { nome: '', idCentroCusto: null, idCargoColaborador: null, idUnidade: null, papel: '' };
   isSalvandoColaborador = false;
 
   carregarColaboradores() {
@@ -665,7 +721,7 @@ export class DespesasViagensComponent implements OnInit {
       this.novoColaborador = { ...colaborador };
     } else {
       this.colaboradorModalMode = 'create';
-      this.novoColaborador = { nome: '', idCentroCusto: null, idCargoColaborador: null, idUnidade: null };
+      this.novoColaborador = { nome: '', idCentroCusto: null, idCargoColaborador: null, idUnidade: null, papel: '' };
     }
     this.isColaboradorModalOpen = true;
   }
@@ -682,6 +738,7 @@ export class DespesasViagensComponent implements OnInit {
           this.isSalvandoColaborador = false;
           this.closeColaboradorModal();
           this.carregarColaboradores();
+          this.carregarColaboradoresGeral();
         },
         error: (err) => { console.error(err); this.isSalvandoColaborador = false; }
       });
@@ -691,6 +748,7 @@ export class DespesasViagensComponent implements OnInit {
           this.isSalvandoColaborador = false;
           this.closeColaboradorModal();
           this.carregarColaboradores();
+          this.carregarColaboradoresGeral();
         },
         error: (err) => { console.error(err); this.isSalvandoColaborador = false; }
       });
@@ -703,6 +761,7 @@ export class DespesasViagensComponent implements OnInit {
         next: () => {
           this.closeConfirmModal();
           this.carregarColaboradores();
+          this.carregarColaboradoresGeral();
         },
         error: (err) => {
           console.error(err);
@@ -774,6 +833,7 @@ export class DespesasViagensComponent implements OnInit {
           this.isSalvandoCategoria = false;
           this.closeCategoriaModal();
           this.carregarCategorias();
+          this.carregarCategoriasGeral();
         },
         error: (err) => { console.error(err); this.isSalvandoCategoria = false; }
       });
@@ -783,6 +843,7 @@ export class DespesasViagensComponent implements OnInit {
           this.isSalvandoCategoria = false;
           this.closeCategoriaModal();
           this.carregarCategorias();
+          this.carregarCategoriasGeral();
         },
         error: (err) => { console.error(err); this.isSalvandoCategoria = false; }
       });
@@ -795,6 +856,7 @@ export class DespesasViagensComponent implements OnInit {
         next: () => {
           this.closeConfirmModal();
           this.carregarCategorias();
+          this.carregarCategoriasGeral();
         },
         error: (err) => {
           console.error(err);
@@ -821,9 +883,9 @@ export class DespesasViagensComponent implements OnInit {
   isSalvandoCentroCusto = false;
 
   estadosBrasil = [
-    'Acre', 'Alagoas', 'Amapá', 'Amazonas', 'Bahia', 'Ceará', 'Distrito Federal', 'Espírito Santo', 
-    'Goiás', 'Maranhão', 'Mato Grosso', 'Mato Grosso do Sul', 'Minas Gerais', 'Pará', 'Paraíba', 
-    'Paraná', 'Pernambuco', 'Piauí', 'Rio de Janeiro', 'Rio Grande do Norte', 'Rio Grande do Sul', 
+    'Acre', 'Alagoas', 'Amapá', 'Amazonas', 'Bahia', 'Ceará', 'Distrito Federal', 'Espírito Santo',
+    'Goiás', 'Maranhão', 'Mato Grosso', 'Mato Grosso do Sul', 'Minas Gerais', 'Pará', 'Paraíba',
+    'Paraná', 'Pernambuco', 'Piauí', 'Rio de Janeiro', 'Rio Grande do Norte', 'Rio Grande do Sul',
     'Rondônia', 'Roraima', 'Santa Catarina', 'São Paulo', 'Sergipe', 'Tocantins'
   ];
 
@@ -847,7 +909,7 @@ export class DespesasViagensComponent implements OnInit {
   carregarCentrosCustoGeral() {
     this.centrosCustoService.listar(1, 1000).subscribe({
       next: (res) => {
-        this.listaCentrosCustoGeral = res.items;
+        this.listaCentrosCustoGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
       }
     });
   }
@@ -873,7 +935,7 @@ export class DespesasViagensComponent implements OnInit {
   closeCentroCustoModal() {
     this.isCentroCustoModalOpen = false;
   }
-  
+
   toggleEstado(estado: string) {
     const index = this.novoCentroCusto.estados.indexOf(estado);
     if (index > -1) {
@@ -928,7 +990,7 @@ export class DespesasViagensComponent implements OnInit {
   // ==========================================
   // IMPORTAÇÕES
   // ==========================================
-  
+
   listaImportacoes: Importacao[] = [];
   totalImportacoes = 0;
   totalImportacaoPages = 1;
@@ -969,7 +1031,7 @@ export class DespesasViagensComponent implements OnInit {
   // OUTROS / MOCKS ANTIGOS E EMPRESAS DA API
   // ==========================================
   empresas: Empresa[] = [];
-  
+
   // Variáveis para a aba de Configuração de Empresas
   searchEmpresaConfig = '';
   currentEmpresaConfigPage = 1;
@@ -1031,6 +1093,7 @@ export class DespesasViagensComponent implements OnInit {
           this.closeEmpresaModal();
           this.carregarEmpresasConfig();
           this.carregarEmpresas(); // Atualiza os cards
+          this.carregarEmpresasGeral();
         },
         error: (err) => { console.error(err); this.isSalvandoEmpresa = false; }
       });
@@ -1041,6 +1104,7 @@ export class DespesasViagensComponent implements OnInit {
           this.closeEmpresaModal();
           this.carregarEmpresasConfig();
           this.carregarEmpresas(); // Atualiza os cards
+          this.carregarEmpresasGeral();
         },
         error: (err) => { console.error(err); this.isSalvandoEmpresa = false; }
       });
@@ -1054,6 +1118,7 @@ export class DespesasViagensComponent implements OnInit {
           this.closeConfirmModal();
           this.carregarEmpresasConfig();
           this.carregarEmpresas(); // Atualiza os cards
+          this.carregarEmpresasGeral();
         },
         error: (err) => {
           console.error(err);
@@ -1086,14 +1151,14 @@ export class DespesasViagensComponent implements OnInit {
           // Mapeia alguns ícones baseados no nome da empresa por padrão visual
           let icon = 'fa-solid fa-building';
           const nomeLower = e.nome.toLowerCase();
-          
+
           if (nomeLower.includes('cartão') || nomeLower.includes('bb')) icon = 'fa-solid fa-credit-card';
           else if (nomeLower.includes('kinto') || nomeLower.includes('localiza')) icon = 'fa-solid fa-car';
           else if (nomeLower.includes('onfly')) icon = 'fa-solid fa-plane-departure';
           else if (nomeLower.includes('dv') || nomeLower.includes('despesa')) icon = 'fa-solid fa-file-invoice-dollar';
           else if (nomeLower.includes('sem parar')) icon = 'fa-solid fa-road-barrier';
           else if (nomeLower.includes('tastur') || nomeLower.includes('viagem')) icon = 'fa-solid fa-ticket';
-          
+
           return { ...e, icon };
         });
       },
@@ -1120,6 +1185,11 @@ export class DespesasViagensComponent implements OnInit {
     this.uploadState = 'idle';
     this.currentProcessingStep = 0;
     this.selectedFileName = '';
+
+    // Garantir que as listas estejam atualizadas com as configurações mais recentes
+    this.carregarColaboradoresGeral();
+    this.carregarCategoriasGeral();
+    this.carregarEmpresasGeral();
   }
 
   closeImportModal() {
@@ -1130,7 +1200,7 @@ export class DespesasViagensComponent implements OnInit {
 
   salvarExtraidos() {
     if (this.despesasExtraidas.length === 0) return;
-    
+
     this.isSalvandoExtraidos = true;
     this.importacoesService.salvarExtraidos(this.selectedFileName, this.despesasExtraidas).subscribe({
       next: (res) => {
@@ -1168,6 +1238,20 @@ export class DespesasViagensComponent implements OnInit {
     return this.listaCategoriasGeral.some(c => c.nome === nome);
   }
 
+  adicionarLinhaEmBranco() {
+    this.despesasExtraidas = [...this.despesasExtraidas, {
+      empresa: this.empresaSelecionada?.nome || 'Empresa Desconhecida',
+      colaborador: '',
+      categoria: '',
+      valor: 0
+    }];
+  }
+
+  removerLinha(index: number) {
+    this.despesasExtraidas.splice(index, 1);
+    this.despesasExtraidas = [...this.despesasExtraidas];
+  }
+
   selectedFile: File | null = null;
 
   onFileSelected(event: any) {
@@ -1196,21 +1280,22 @@ export class DespesasViagensComponent implements OnInit {
     const file = this.selectedFile;
     this.uploadState = 'processing';
     this.currentProcessingStep = 0;
-    
+
     // Passo 0 para Passo 1
     setTimeout(() => {
       this.currentProcessingStep = 1;
-      
+
       const nomeEmpresa = this.empresaSelecionada?.nome || 'Empresa Desconhecida';
       this.importacoesService.analisarExtrato(file, nomeEmpresa).subscribe({
         next: (res) => {
           if (res.sucesso) {
-            // Arredondando todos os valores retornados para 2 casas decimais
+            // Arredondando todos os valores retornados para 2 casas decimais e associando a empresa selecionada no card
             this.despesasExtraidas = res.dados.map((d: any) => ({
               ...d,
+              empresa: this.empresaSelecionada?.nome || 'Empresa Desconhecida',
               valor: Number(parseFloat(d.valor).toFixed(2))
             }));
-            
+
             this.currentProcessingStep = 2; // Interpretando...
             setTimeout(() => {
               this.currentProcessingStep = 3; // Pronto para conferência...
@@ -1270,7 +1355,7 @@ export class DespesasViagensComponent implements OnInit {
     if (!file && this.colabFileInput?.nativeElement?.files?.length) {
       file = this.colabFileInput.nativeElement.files[0];
     }
-    
+
     if (!file) return;
 
     this.uploadColabState = 'processing';
@@ -1291,17 +1376,17 @@ export class DespesasViagensComponent implements OnInit {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
-      
+
       let done = false;
       let partialData = '';
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
-        
+
         if (value) {
           partialData += decoder.decode(value, { stream: true });
-          
+
           const lines = partialData.split('\n');
           // keep the last chunk if it's incomplete
           partialData = lines.pop() || '';
@@ -1309,7 +1394,7 @@ export class DespesasViagensComponent implements OnInit {
           for (const line of lines) {
             if (line.trim()) {
               const data = JSON.parse(line);
-              
+
               if (data.status === 'error') {
                 this.uploadColabState = 'error';
                 this.uploadColabError = data.message;
@@ -1317,11 +1402,12 @@ export class DespesasViagensComponent implements OnInit {
               }
 
               this.currentColabStep = data.step;
-              
+
               if (data.status === 'success') {
                 this.uploadColabState = 'done';
                 this.uploadColabSummary = data.summary;
                 this.carregarColaboradores(); // refresh list
+                this.carregarColaboradoresGeral(); // refresh general list
                 setTimeout(() => this.closeImportColabModal(), 5000);
               }
             }
@@ -1352,7 +1438,7 @@ export class DespesasViagensComponent implements OnInit {
       const pdf = new jsPDF('l', 'mm', 'a4'); // landscape
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
+
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save('dashboard-despesas-viagens.pdf');
     } catch (error) {
@@ -1362,7 +1448,7 @@ export class DespesasViagensComponent implements OnInit {
 
   toggleFullscreen() {
     const elem = this.dashboardWrapper?.nativeElement;
-    
+
     if (!document.fullscreenElement) {
       if (elem?.requestFullscreen) {
         elem.requestFullscreen().catch((err: any) => {
@@ -1408,7 +1494,7 @@ export class DespesasViagensComponent implements OnInit {
 
   selecionarAtalhoPeriodo(shortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado') {
     const today = new Date();
-    
+
     const getPastDate = (monthsAgo: number) => {
       const d = new Date();
       d.setMonth(d.getMonth() - monthsAgo);
@@ -1446,9 +1532,9 @@ export class DespesasViagensComponent implements OnInit {
 
   carregarDetalhesCategoria() {
     if (!this.selectedCategoryId) return;
-    
+
     this.categoryDetailsLoading = true;
-    
+
     const filtros: any = {
       id_categoria: this.selectedCategoryId
     };
@@ -1464,7 +1550,7 @@ export class DespesasViagensComponent implements OnInit {
     if (this.dashFiltroPessoa) {
       filtros.id_colaborador = this.dashFiltroPessoa;
     }
-    
+
     this.importacoesService.obterDadosDashboard(filtros).subscribe({
       next: (res) => {
         this.categoryVisaoGeral = {
@@ -1476,15 +1562,21 @@ export class DespesasViagensComponent implements OnInit {
         };
         this.categoryTabelaDespesas = res.tabelaMaioresDespesas;
         this.categorySpenders = res.spenders || [];
-        
-        // Configurar gráfico de barras horizontal de Despesas por Empresa na categoria
+
         const colors = ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899'];
+        const themeColors = this.getThemeColors();
         this.categoryEmpresasOption = {
           color: colors,
           tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
           grid: { top: 20, left: 10, right: 20, bottom: 20, containLabel: true },
           xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
-          yAxis: { type: 'category', data: (res.donutEmpresas || []).map((e: any) => e.name), axisLine: { show: false }, axisTick: { show: false } },
+          yAxis: {
+            type: 'category',
+            data: (res.donutEmpresas || []).map((e: any) => e.name),
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { color: themeColors.text }
+          },
           series: [
             {
               name: 'Valor',
@@ -1498,13 +1590,13 @@ export class DespesasViagensComponent implements OnInit {
                   return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 },
                 fontSize: 10,
-                color: '#64748b'
+                color: themeColors.text
               },
               data: (res.donutEmpresas || []).map((e: any) => e.value)
             }
           ]
         };
-        
+
         this.categoryDetailsLoading = false;
         this.isDashboardLoading = false;
       },
@@ -1515,4 +1607,439 @@ export class DespesasViagensComponent implements OnInit {
       }
     });
   }
+
+  // ==========================================
+  // ABA COMERCIAL/MARKETING — DADOS E GRÁFICOS
+  // ==========================================
+
+  // Filtros Comercial/Marketing
+  analiticoDataInicio: Date | null = null;
+  analiticoDataFim: Date | null = null;
+  analiticoPeriodShortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado' | 'personalizado' | null = null;
+  analiticoCategoria: string | null = null;
+  analiticoColaborador: string | null = null;
+  analiticoCentroCusto: string | null = null;
+  isAnaliticoDetalhesActive = false;
+
+  toggleAnaliticoDetalhes() {
+    this.isAnaliticoDetalhesActive = !this.isAnaliticoDetalhesActive;
+  }
+
+  analiticoRankingTab: 'colaboradores' | 'categorias' = 'colaboradores';
+  rankingColaboradores: { posicao: number, nome: string, valor: number, pct: number }[] = [];
+  rankingCategorias: { posicao: number, nome: string, valor: number, pct: number }[] = [];
+
+  setAnaliticoRankingTab(tab: 'colaboradores' | 'categorias') {
+    this.analiticoRankingTab = tab;
+  }
+
+  // Detalhes Matrix Grid
+  searchDetalhesTerm = '';
+  detalhesCategoriasColunas: string[] = [];
+  detalhesMatrizOriginal: { colaboradorNome: string, valoresPorCategoria: { [cat: string]: number }, total: number }[] = [];
+  detalhesMatrizFiltrada: { colaboradorNome: string, valoresPorCategoria: { [cat: string]: number }, total: number }[] = [];
+  detalhesTotaisPorCategoria: { [cat: string]: number } = {};
+  detalhesTotalGeral = 0;
+
+  onSearchDetalhesChange(term: string) {
+    this.searchDetalhesTerm = term;
+    this.filtrarDetalhesMatriz();
+  }
+
+  filtrarDetalhesMatriz() {
+    if (!this.searchDetalhesTerm || !this.searchDetalhesTerm.trim()) {
+      this.detalhesMatrizFiltrada = [...this.detalhesMatrizOriginal];
+      return;
+    }
+    const term = this.searchDetalhesTerm.toLowerCase().trim();
+    this.detalhesMatrizFiltrada = this.detalhesMatrizOriginal.filter(item =>
+      item.colaboradorNome.toLowerCase().includes(term) ||
+      item.total.toString().includes(term)
+    );
+  }
+
+  // KPI
+  analiticoTotalDespesas = 0;
+
+  // Charts
+  chartAnaliticoBarrasVerticais: EChartsOption = {};
+  chartAnaliticoCategoriaBarras: EChartsOption = {};
+  chartAnaliticoCategoriaDonut: EChartsOption = {};
+  chartAnaliticoButterfly: EChartsOption = {};
+  chartAnaliticoEvolucaoLinha: EChartsOption = {};
+  chartAnaliticoCentroCusto: EChartsOption = {};
+  chartAnaliticoMapa: EChartsOption = {};
+
+  onAnaliticoDataInicioChange() {
+    if (this.analiticoDataInicio && this.analiticoDataFim && this.analiticoDataInicio > this.analiticoDataFim) {
+      this.analiticoDataFim = this.analiticoDataInicio;
+    }
+    this.analiticoPeriodShortcut = 'personalizado';
+    this.atualizarDadosAnalitico();
+  }
+
+  onAnaliticoDataFimChange() {
+    this.analiticoPeriodShortcut = 'personalizado';
+    this.atualizarDadosAnalitico();
+  }
+
+  onAnaliticoShortcutSelectChange(val: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado' | 'personalizado') {
+    if (val && val !== 'personalizado') {
+      this.selecionarAtalhoPeriodoAnalitico(val);
+    }
+  }
+
+  selecionarAtalhoPeriodoAnalitico(shortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado') {
+    const today = new Date();
+    const getPastDate = (monthsAgo: number) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - monthsAgo);
+      return d;
+    };
+
+    if (shortcut === 'ultimo-bimestre') {
+      this.analiticoDataInicio = getPastDate(2);
+      this.analiticoDataFim = today;
+    } else if (shortcut === 'ultimo-semestre') {
+      this.analiticoDataInicio = getPastDate(6);
+      this.analiticoDataFim = today;
+    } else if (shortcut === 'este-ano') {
+      this.analiticoDataInicio = new Date(today.getFullYear(), 0, 1);
+      this.analiticoDataFim = new Date(today.getFullYear(), 11, 31);
+    } else if (shortcut === 'ano-passado') {
+      this.analiticoDataInicio = new Date(today.getFullYear() - 1, 0, 1);
+      this.analiticoDataFim = new Date(today.getFullYear() - 1, 11, 31);
+    }
+
+    this.analiticoPeriodShortcut = shortcut;
+    this.atualizarDadosAnalitico();
+  }
+
+
+
+
+  // --- Comercial/Marketing ---
+  isAnaliticoLoading = false;
+  analiticoDetalhes: any[] = [];
+
+
+  atualizarDadosAnalitico() {
+    this.isAnaliticoLoading = true;
+
+    const filtros = {
+      data_inicio: this.analiticoDataInicio ? this.analiticoDataInicio.toISOString().split('T')[0] : null,
+      data_fim: this.analiticoDataFim ? this.analiticoDataFim.toISOString().split('T')[0] : null,
+      id_empresa: null,
+      id_colaborador: this.analiticoColaborador || null,
+      id_categoria: this.analiticoCategoria || null
+    };
+
+    this.importacoesService.obterDadosDashboardAnalitico(filtros).subscribe({
+      next: (dados) => {
+        this.isAnaliticoLoading = false;
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#06b6d4', '#8b5cf6', '#f43f5e'];
+        const themeColors = this.getThemeColors();
+        const isDark = this.themeService.activeTheme() === 'dark';
+
+        this.analiticoTotalDespesas = dados.analiticoTotalDespesas;
+
+        // 3. Barras verticais
+        this.chartAnaliticoBarrasVerticais = {
+          color: [colors[0]],
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: (params: any) => {
+              const p = params[0];
+              return `${p.name}<br/>Total: ${p.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+            }
+          },
+          grid: { top: 30, left: 20, right: 20, bottom: 30, containLabel: true },
+          xAxis: {
+            type: 'category',
+            data: dados.meses,
+            axisLabel: { fontSize: 11, color: themeColors.text },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: themeColors.border } }
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              formatter: (val: number) => val >= 1000 ? `R$ ${(val / 1000).toFixed(0)}k` : `R$ ${val}`,
+              fontSize: 11,
+              color: themeColors.text
+            },
+            splitLine: { lineStyle: { color: themeColors.borderLight } }
+          },
+          series: [{
+            name: 'Total',
+            type: 'bar',
+            barWidth: '50%',
+            itemStyle: { borderRadius: [4, 4, 0, 0] },
+            data: dados.barrasVerticais
+          }]
+        };
+
+        // 4. Barras horizontais categorias e 5. Donut
+        const catNames = dados.categoriaBarras.map((c: any) => c.name);
+        const catNamesAsc = [...catNames].reverse();
+        const catValuesAsc = dados.categoriaBarras.map((c: any) => c.value).reverse();
+
+        this.chartAnaliticoCategoriaBarras = {
+          color: colors,
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: (params: any) => {
+              const p = params[0];
+              return `${p.name}<br/>Total: ${p.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+            }
+          },
+          grid: { top: 10, left: 10, right: 80, bottom: 10, containLabel: true },
+          xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
+          yAxis: {
+            type: 'category',
+            data: catNamesAsc,
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { fontSize: 11, color: themeColors.text, width: 120, overflow: 'truncate' }
+          },
+          series: [{
+            name: 'Valor',
+            type: 'bar',
+            barWidth: '60%',
+            itemStyle: { borderRadius: [0, 4, 4, 0] },
+            label: {
+              show: true,
+              position: 'right',
+              formatter: (params: any) => params.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+              fontSize: 10,
+              color: themeColors.text
+            },
+            data: catValuesAsc.map((v: any, i: number) => ({ value: v, itemStyle: { color: colors[i % colors.length] } }))
+          }]
+        };
+
+        this.chartAnaliticoCategoriaDonut = {
+          color: colors,
+          tooltip: { trigger: 'item', formatter: '{b}: R$ {c} ({d}%)' },
+          legend: { show: false },
+          series: [{
+            type: 'pie',
+            radius: ['40%', '65%'],
+            avoidLabelOverlap: true,
+            itemStyle: { borderRadius: 6, borderColor: themeColors.pieBorderColor, borderWidth: 2 },
+            label: {
+              show: true,
+              position: 'outer',
+              formatter: '{b}\n{d}%',
+              fontSize: 10,
+              color: themeColors.text
+            },
+            labelLine: { show: true, length: 8, length2: 8 },
+            data: dados.categoriaBarras
+          }]
+        };
+
+        // 5.b Butterfly Chart (Comercial vs Marketing por Categoria)
+        const bf = dados.butterfly;
+        const butterflyCats = bf.categorias;
+        const comValues = bf.comercial.map((v: number) => -v);
+        const mktValues = bf.marketing;
+
+        this.chartAnaliticoButterfly = {
+          color: ['#3b82f6', '#ec4899'],
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: (params: any) => {
+              let res = `<strong>${params[0].name}</strong><br/>`;
+              params.forEach((p: any) => {
+                const val = Math.abs(p.value);
+                res += `${p.marker} ${p.seriesName}: ${val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}<br/>`;
+              });
+              return res;
+            }
+          },
+          legend: {
+            data: ['Comercial', 'Marketing'],
+            top: 0,
+            textStyle: { fontSize: 11, color: themeColors.text }
+          },
+          grid: { top: 30, left: 10, right: 10, bottom: 10, containLabel: true },
+          xAxis: {
+            type: 'value',
+            axisLabel: {
+              formatter: (val: number) => {
+                const abs = Math.abs(val);
+                return abs >= 1000 ? `R$ ${(abs / 1000).toFixed(0)}k` : `R$ ${abs}`;
+              },
+              fontSize: 9,
+              color: themeColors.text
+            },
+            splitLine: { lineStyle: { color: themeColors.borderLight } }
+          },
+          yAxis: {
+            type: 'category',
+            data: butterflyCats,
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { fontSize: 10, color: themeColors.text, width: 90, overflow: 'truncate' }
+          },
+          series: [
+            {
+              name: 'Comercial',
+              type: 'bar',
+              stack: 'total',
+              itemStyle: { borderRadius: [4, 0, 0, 4] },
+              data: comValues
+            },
+            {
+              name: 'Marketing',
+              type: 'bar',
+              stack: 'total',
+              itemStyle: { borderRadius: [0, 4, 4, 0] },
+              data: mktValues
+            }
+          ]
+        };
+
+        // 6. Evolução Centro de Custo
+        const evolSeries = dados.evolucaoCentroCusto.series.map((s: any, idx: number) => ({
+          name: s.name,
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          lineStyle: { width: 2 },
+          data: s.data,
+          itemStyle: { color: colors[idx % colors.length] }
+        }));
+
+        this.chartAnaliticoEvolucaoLinha = {
+          tooltip: {
+            trigger: 'axis',
+            formatter: (params: any) => {
+              let res = `<strong>${params[0].name}</strong><br/>`;
+              params.forEach((p: any) => {
+                res += `${p.marker} ${p.seriesName}: ${p.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}<br/>`;
+              });
+              return res;
+            }
+          },
+          grid: { top: 30, left: 20, right: 20, bottom: 30, containLabel: true },
+          xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: dados.evolucaoCentroCusto.meses,
+            axisLabel: { fontSize: 11, color: themeColors.text },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: themeColors.border } }
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              formatter: (val: number) => val >= 1000 ? `R$ ${(val / 1000).toFixed(0)}k` : `R$ ${val}`,
+              fontSize: 11,
+              color: themeColors.text
+            },
+            splitLine: { lineStyle: { color: themeColors.borderLight } }
+          },
+          series: evolSeries
+        };
+
+        // 7. Barras horizontais centro de custo
+        const ccNamesAsc = [...dados.centroCustoBarras].reverse().map((c: any) => c.name);
+        const ccValuesAsc = [...dados.centroCustoBarras].reverse().map((c: any) => c.value);
+
+        this.chartAnaliticoCentroCusto = {
+          color: ['#6366f1'],
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: (params: any) => {
+              const p = params[0];
+              return `${p.name}<br/>Total: ${p.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+            }
+          },
+          grid: { top: 10, left: 10, right: 80, bottom: 10, containLabel: true },
+          xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
+          yAxis: {
+            type: 'category',
+            data: ccNamesAsc,
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { fontSize: 10, color: themeColors.text, width: 180, overflow: 'truncate' }
+          },
+          series: [{
+            name: 'Valor',
+            type: 'bar',
+            barWidth: '55%',
+            itemStyle: { borderRadius: [0, 4, 4, 0], color: '#6366f1' },
+            label: {
+              show: true,
+              position: 'right',
+              formatter: (params: any) => params.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+              fontSize: 10,
+              color: themeColors.text
+            },
+            data: ccValuesAsc
+          }]
+        };
+
+        // 8. Mapa
+        const maxMapVal = Math.max(1000, ...dados.mapaData.map((d: any) => d.value));
+        const totalGeral = dados.analiticoTotalDespesas || 1;
+        const mapaDataFormatado = dados.mapaData.map((d: any) => ({
+          ...d,
+          pct: ((d.value / totalGeral) * 100).toFixed(1)
+        }));
+
+        this.chartAnaliticoMapa = {
+          tooltip: {
+            trigger: 'item',
+            formatter: (params: any) => {
+              const pct = params.data?.pct || '0.0';
+              return `${params.name}<br/>Total: ${(params.value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}<br/>Participação: ${pct}%`;
+            }
+          },
+          visualMap: {
+            min: 0,
+            max: maxMapVal,
+            text: ['Alto', 'Baixo'],
+            realtime: false,
+            calculable: true,
+            textStyle: { color: themeColors.text },
+            inRange: { color: isDark ? ['#172554', '#3b82f6', '#60a5fa'] : ['#eff6ff', '#3b82f6', '#1e3a8a'] }
+          },
+          series: [{
+            name: 'Despesas por Estado',
+            type: 'map',
+            map: 'brazil',
+            roam: true,
+            label: { show: false },
+            data: mapaDataFormatado
+          }]
+        };
+
+        // 9-11. Outros paineis
+        this.rankingColaboradores = dados.rankingColaboradores;
+        this.rankingCategorias = dados.rankingCategorias;
+        this.detalhesMatrizOriginal = dados.detalhesMatrizOriginal;
+        this.detalhesCategoriasColunas = dados.detalhesCategoriasColunas;
+        this.detalhesTotaisPorCategoria = dados.detalhesTotaisPorCategoria;
+        this.detalhesTotalGeral = dados.detalhesTotalGeral;
+
+        // Atribuir detalhes lista
+        this.analiticoDetalhes = dados.detalhes;
+
+        this.filtrarDetalhesMatriz();
+      },
+      error: (err) => {
+        console.error("Erro ao carregar dados analíticos", err);
+        this.isAnaliticoLoading = false;
+      }
+    });
+  }
+
 }

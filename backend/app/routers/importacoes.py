@@ -7,6 +7,8 @@ from app.services.ia_service import IAService
 from app.services.dashboard_service import DashboardService
 from app.repositories.categoria_repository import CategoriaRepository
 from app.repositories.colaborador_repository import ColaboradorRepository
+from pydantic import BaseModel
+from typing import List, Optional
 
 router = APIRouter()
 
@@ -138,6 +140,27 @@ def get_dashboard(
     try:
         service = DashboardService(db)
         return service.obter_dados(
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            id_empresa=id_empresa,
+            id_colaborador=id_colaborador,
+            id_categoria=id_categoria
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/dashboard/analitico")
+def get_dashboard_analitico(
+    data_inicio: str = Query(None),
+    data_fim: str = Query(None),
+    id_empresa: int = Query(None),
+    id_colaborador: int = Query(None),
+    id_categoria: int = Query(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        service = DashboardService(db)
+        return service.obter_dados_analitico(
             data_inicio=data_inicio,
             data_fim=data_fim,
             id_empresa=id_empresa,
@@ -1736,5 +1759,1051 @@ async def conciliar_savegnago(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+from datetime import datetime
+from typing import List
+
+@router.post("/conciliacao-pagamentos/cruzamento")
+async def conciliar_pagamentos_cruzamento(
+    apb_file: UploadFile = File(...),
+    banco_files: List[UploadFile] = File(...)
+):
+    try:
+        print(f"[DEBUG CONCILIACAO] Iniciando processamento. APB: {apb_file.filename}, Arquivos de banco: {[f.filename for f in banco_files]}")
+        # 1. Parse APB File
+        content_apb = await apb_file.read()
+        df_apb = pd.read_excel(io.BytesIO(content_apb))
+        print(f"[DEBUG CONCILIACAO] Planilha APB carregada com {len(df_apb)} linhas e colunas: {list(df_apb.columns)}")
+        
+        def find_column_by_name(df, candidates):
+            for col in df.columns:
+                col_lower = str(col).lower().strip()
+                if any(c in col_lower for c in candidates):
+                    return col
+            return None
+
+        apb_list = []
+        if not df_apb.empty:
+            # 1. Tenta encontrar colunas por nome
+            col_data = find_column_by_name(df_apb, ['data', 'vencimento', 'pagamento'])
+            col_doc = find_column_by_name(df_apb, ['documento', 'titulo', 'numero', 'doc', 'nº'])
+            col_forn = find_column_by_name(df_apb, ['fornecedor', 'favorecido', 'nome', 'beneficiario', 'cliente'])
+            col_val = find_column_by_name(df_apb, ['valor', 'val', 'liquido', 'total', 'quant'])
+            col_cnpj_cpf = find_column_by_name(df_apb, ['cnpj', 'cpf', 'identificacao'])
+            col_conta = find_column_by_name(df_apb, ['conta', 'agencia', 'banco', 'pix', 'dados bancarios'])
+            
+            # 2. Se falhar, analisa o conteúdo real das células
+            sample_size = min(10, len(df_apb))
+            if sample_size > 0:
+                column_types = {}
+                for col in df_apb.columns:
+                    non_null_vals = df_apb[col].dropna().head(sample_size).tolist()
+                    if not non_null_vals:
+                        continue
+                    
+                    is_numeric_count = 0
+                    is_date_count = 0
+                    is_cnpj_cpf_count = 0
+                    avg_len = 0
+                    
+                    for val in non_null_vals:
+                        val_str = str(val).strip()
+                        avg_len += len(val_str)
+                        
+                        if isinstance(val, (datetime, pd.Timestamp)):
+                            is_date_count += 1
+                            continue
+                        if re.match(r'^\d{2}/\d{2}/\d{2,4}$', val_str):
+                            is_date_count += 1
+                            continue
+                            
+                        digits = re.sub(r'\D', '', val_str)
+                        if len(digits) in [11, 14] and digits.isdigit():
+                            is_cnpj_cpf_count += 1
+                            
+                        cleaned_val = val_str.replace('R$', '').replace('.', '').replace(',', '.').replace('\xa0', '').strip()
+                        try:
+                            float(cleaned_val)
+                            is_numeric_count += 1
+                        except ValueError:
+                            pass
+                    
+                    avg_len /= len(non_null_vals)
+                    column_types[col] = {
+                        "is_numeric_pct": is_numeric_count / len(non_null_vals),
+                        "is_date_pct": is_date_count / len(non_null_vals),
+                        "is_cnpj_cpf_pct": is_cnpj_cpf_count / len(non_null_vals),
+                        "avg_len": avg_len,
+                        "sample_vals": [str(x) for x in non_null_vals]
+                    }
+                
+                # Mapeia colunas baseado na probabilidade
+                if not col_val:
+                    best_val_col = None
+                    best_pct = 0.0
+                    for col, info in column_types.items():
+                        if info["is_date_pct"] > 0.5:
+                            continue
+                        if info["is_numeric_pct"] > best_pct:
+                            best_pct = info["is_numeric_pct"]
+                            best_val_col = col
+                    if best_pct > 0.4:
+                        col_val = best_val_col
+                
+                if not col_data:
+                    best_date_col = None
+                    best_pct = 0.0
+                    for col, info in column_types.items():
+                        if info["is_date_pct"] > best_pct:
+                            best_pct = info["is_date_pct"]
+                            best_date_col = col
+                    if best_pct > 0.4:
+                        col_data = best_date_col
+                
+                if not col_cnpj_cpf:
+                    best_cnpj_col = None
+                    best_pct = 0.0
+                    for col, info in column_types.items():
+                        if info["is_cnpj_cpf_pct"] > best_pct:
+                            best_pct = info["is_cnpj_cpf_pct"]
+                            best_cnpj_col = col
+                    if best_pct > 0.4:
+                        col_cnpj_cpf = best_cnpj_col
+                
+                if not col_forn:
+                    best_forn_col = None
+                    max_len = 0
+                    for col, info in column_types.items():
+                        if col in [col_val, col_data, col_cnpj_cpf, col_conta]:
+                            continue
+                        if info["avg_len"] <= 4 and any("R$" in val for val in info["sample_vals"]):
+                            continue
+                        if info["avg_len"] > max_len:
+                            max_len = info["avg_len"]
+                            best_forn_col = col
+                    col_forn = best_forn_col
+
+            # Definição final de fallbacks caso continue nulo
+            col_val = col_val or (df_apb.columns[3] if len(df_apb.columns) > 3 else df_apb.columns[0])
+            col_forn = col_forn or (df_apb.columns[2] if len(df_apb.columns) > 2 else df_apb.columns[0])
+            col_data = col_data or (df_apb.columns[0] if len(df_apb.columns) > 0 else df_apb.columns[0])
+            col_doc = col_doc or (df_apb.columns[1] if len(df_apb.columns) > 1 else df_apb.columns[0])
+            
+            print(f"[DEBUG CONCILIACAO] Colunas mapeadas - Valor: {col_val}, Fornecedor: {col_forn}, Data: {col_data}, Doc: {col_doc}")
+            
+            for idx, row in df_apb.iterrows():
+                try:
+                    val_raw = row[col_val]
+                    if pd.isna(val_raw):
+                        continue
+                    
+                    # Convert to float
+                    val_str = str(val_raw).replace('R$', '').replace('.', '').replace(',', '.').replace('\xa0', '').strip()
+                    val = float(val_str)
+                    
+                    date_raw = row[col_data] if col_data in df_apb.columns else None
+                    date_str = ""
+                    if pd.notna(date_raw):
+                        if isinstance(date_raw, datetime):
+                            date_str = date_raw.strftime("%d/%m/%Y")
+                        else:
+                            date_str = str(date_raw).strip()
+                    
+                    doc_raw = row[col_doc] if col_doc in df_apb.columns else ""
+                    doc_str = str(doc_raw).strip() if pd.notna(doc_raw) else ""
+                    if doc_str.endswith(".0"):
+                        doc_str = doc_str[:-2]
+                        
+                    forn_raw = row[col_forn] if col_forn in df_apb.columns else ""
+                    forn_str = str(forn_raw).strip() if pd.notna(forn_raw) else ""
+                    
+                    cnpj_cpf_str = ""
+                    if col_cnpj_cpf and col_cnpj_cpf in df_apb.columns:
+                        cnpj_cpf_raw = row[col_cnpj_cpf]
+                        cnpj_cpf_str = str(cnpj_cpf_raw).strip() if pd.notna(cnpj_cpf_raw) else ""
+                        if cnpj_cpf_str.endswith(".0"):
+                            cnpj_cpf_str = cnpj_cpf_str[:-2]
+                    
+                    conta_str = ""
+                    if col_conta and col_conta in df_apb.columns:
+                        conta_raw = row[col_conta]
+                        conta_str = str(conta_raw).strip() if pd.notna(conta_raw) else ""
+                        if conta_str.endswith(".0"):
+                            conta_str = conta_str[:-2]
+                    
+                    apb_list.append({
+                        "data": date_str,
+                        "documento": doc_str,
+                        "fornecedor": forn_str,
+                        "valor": val,
+                        "cnpj_cpf": cnpj_cpf_str,
+                        "dados_bancarios": conta_str,
+                        "matched": False
+                    })
+                except Exception:
+                    continue
+
+        print(f"[DEBUG CONCILIACAO] Total de títulos carregados do APB: {len(apb_list)}")
+
+        # 2. Parse Bank Files
+        banco_list = []
+        ia = IAService()
+        
+        for b_file in banco_files:
+            b_filename = b_file.filename or "extrato"
+            print(f"[DEBUG CONCILIACAO] Analisando arquivo de banco: {b_filename}")
+            b_content = await b_file.read()
+            
+            if b_filename.lower().endswith(".pdf"):
+                # Call Gemini for PDF extraction
+                res_ia = await ia.analisar_banco_pdf(b_content, b_filename)
+                extracted_trns = res_ia.get("transacoes", [])
+                for tx in extracted_trns:
+                    sit = tx.get("situacao", "")
+                    if not sit:
+                        desc_t = tx.get("descricao", "")
+                        if "Confirmação de Pagamento" in desc_t or "PIX CEF MATRIZ" in desc_t:
+                            sit = "BB-PIX"
+                        else:
+                            sit = "BB-LIB"
+                    banco_list.append({
+                        "data": tx.get("data", ""),
+                        "descricao": tx.get("descricao", ""),
+                        "valor": tx.get("valor", 0.0),
+                        "documento": tx.get("documento", ""),
+                        "situacao": sit
+                    })
+                print(f"[DEBUG CONCILIACAO] Extraídas {len(extracted_trns)} transações do PDF pelo Gemini.")
+            elif b_filename.lower().endswith(".ofx"):
+                # Parse OFX
+                content_str = b_content.decode("utf-8", errors="ignore")
+                transactions = []
+                stmttrns = re.findall(r'<STMTTRN>(.*?)</STMTTRN>', content_str, re.DOTALL | re.IGNORECASE)
+                if not stmttrns:
+                    stmttrns = re.split(r'<STMTTRN>', content_str, flags=re.IGNORECASE)[1:]
+                    
+                for trn in stmttrns:
+                    fitid = re.search(r'<FITID>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
+                    dtposted = re.search(r'<DTPOSTED>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
+                    trnamt = re.search(r'<TRNAMT>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
+                    memo = re.search(r'<MEMO>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
+                    name = re.search(r'<NAME>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
+                    
+                    doc = fitid.group(1).strip() if fitid else ""
+                    date_str = ""
+                    if dtposted:
+                        raw_dt = dtposted.group(1).strip()
+                        if len(raw_dt) >= 8:
+                            date_str = f"{raw_dt[6:8]}/{raw_dt[4:6]}/{raw_dt[0:4]}"
+                    amt = 0.0
+                    if trnamt:
+                        try:
+                            amt = abs(float(trnamt.group(1).strip()))
+                        except ValueError:
+                            pass
+                    desc = memo.group(1).strip() if memo else (name.group(1).strip() if name else "Lançamento Bancário")
+                    
+                    sit = "BB-PIX" if ("Confirmação de Pagamento" in desc or "PIX CEF" in desc) else "BB-LIB"
+                    transactions.append({
+                        "data": date_str,
+                        "descricao": desc,
+                        "valor": amt,
+                        "documento": doc,
+                        "situacao": sit
+                    })
+                banco_list.extend(transactions)
+            else:
+                # Excel or CSV
+                try:
+                    if b_filename.lower().endswith(".csv"):
+                        df_b = pd.read_csv(io.BytesIO(b_content))
+                    else:
+                        df_b = pd.read_excel(io.BytesIO(b_content))
+                    
+                    if not df_b.empty:
+                        col_b_data = find_column(df_b, ['data', 'vencimento', 'pagamento']) or df_b.columns[0]
+                        col_b_desc = find_column(df_b, ['descricao', 'historico', 'memo', 'detalhe', 'fornecedor', 'nome']) or (df_b.columns[1] if len(df_b.columns) > 1 else df_b.columns[0])
+                        col_b_val = find_column(df_b, ['valor', 'val', 'lancamento', 'total', 'quant']) or (df_b.columns[2] if len(df_b.columns) > 2 else df_b.columns[0])
+                        col_b_doc = find_column(df_b, ['documento', 'titulo', 'numero', 'doc'])
+                        
+                        for idx, row in df_b.iterrows():
+                            try:
+                                val_raw = row[col_b_val]
+                                if pd.isna(val_raw):
+                                    continue
+                                val = abs(float(str(val_raw).replace('R$', '').replace('.', '').replace(',', '.').replace('\xa0', '').strip()))
+                                
+                                date_raw = row[col_b_data]
+                                date_str = ""
+                                if pd.notna(date_raw):
+                                    if isinstance(date_raw, datetime):
+                                        date_str = date_raw.strftime("%d/%m/%Y")
+                                    else:
+                                        date_str = str(date_raw).strip()
+                                
+                                doc_str = str(row[col_b_doc]).strip() if (col_b_doc and pd.notna(row[col_b_doc])) else ""
+                                if doc_str.endswith(".0"):
+                                    doc_str = doc_str[:-2]
+                                desc_str = str(row[col_b_desc]).strip() if pd.notna(row[col_b_desc]) else "Lançamento Bancário"
+                                
+                                sit = "BB-PIX" if ("Confirmação de Pagamento" in desc_str or "PIX CEF" in desc_str) else "BB-LIB"
+                                banco_list.append({
+                                    "data": date_str,
+                                    "descricao": desc_str,
+                                    "valor": val,
+                                    "documento": doc_str,
+                                    "situacao": sit
+                                })
+                            except Exception:
+                                continue
+                except Exception:
+                    continue
+
+        print(f"[DEBUG CONCILIACAO] Total de transações bancárias carregadas: {len(banco_list)}")
+        print("[DEBUG CONCILIACAO] Iniciando cruzamento de dados...")
+        
+        # 3. Cruzamento / Reconciliação
+        matches = []
+        for b_item in banco_list:
+            matched_apb = None
+            status = "nao_encontrado"
+            
+            # Regra Específica 1: PIX CEF MATRIZ -> FGTS FOLHA
+            desc_b = b_item["descricao"].lower()
+            if "pix cef matriz" in desc_b or "pagamento instantâneo-pix cef" in desc_b or "pagamento instantaneo-pix cef" in desc_b:
+                for a_item in apb_list:
+                    if not a_item["matched"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
+                        forn_lower = a_item["fornecedor"].lower()
+                        doc_lower = a_item["documento"].lower()
+                        if "fgts" in forn_lower or "folha" in forn_lower or "fgts" in doc_lower or "folha" in doc_lower:
+                            matched_apb = a_item
+                            status = "conciliado"
+                            b_item["situacao"] = "BB-PIX"
+                            break
+            
+            # Match 1: documento + valor exato
+            if not matched_apb and b_item["documento"]:
+                for a_item in apb_list:
+                    if not a_item["matched"] and a_item["documento"] == b_item["documento"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
+                        matched_apb = a_item
+                        status = "conciliado"
+                        break
+                        
+            # Match 2: nome/CNPJ + valor exato + data aproximada (dentro de 5 dias)
+            if not matched_apb:
+                for a_item in apb_list:
+                    if not a_item["matched"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
+                        desc_lower = b_item["descricao"].lower()
+                        forn_lower = a_item["fornecedor"].lower()
+                        
+                        name_match = (forn_lower in desc_lower or desc_lower in forn_lower or (a_item["cnpj_cpf"] and a_item["cnpj_cpf"] in desc_lower))
+                        if name_match:
+                            try:
+                                b_date = datetime.strptime(b_item["data"], "%d/%m/%Y")
+                                a_date = datetime.strptime(a_item["data"], "%d/%m/%Y")
+                                if abs((b_date - a_date).days) <= 5:
+                                    matched_apb = a_item
+                                    status = "conciliado"
+                                    break
+                            except Exception:
+                                matched_apb = a_item
+                                status = "conciliado"
+                                break
+                                
+            # Match 3: valor exato + data aproximada (fall-back geral)
+            if not matched_apb:
+                for a_item in apb_list:
+                    if not a_item["matched"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
+                        try:
+                            b_date = datetime.strptime(b_item["data"], "%d/%m/%Y")
+                            a_date = datetime.strptime(a_item["data"], "%d/%m/%Y")
+                            if abs((b_date - a_date).days) <= 5:
+                                matched_apb = a_item
+                                status = "conciliado"
+                                break
+                        except Exception:
+                            matched_apb = a_item
+                            status = "conciliado"
+                            break
+
+            # Match 4 (Novo): Agrupamento de múltiplos títulos do APB que somam o valor total debitado/creditado no banco
+            if not matched_apb:
+                desc_lower = b_item["descricao"].lower()
+                candidatos_apb = []
+                for a_item in apb_list:
+                    if not a_item["matched"]:
+                        forn_lower = a_item["fornecedor"].lower()
+                        if forn_lower in desc_lower or desc_lower in forn_lower or (a_item["cnpj_cpf"] and a_item["cnpj_cpf"] in desc_lower):
+                            candidatos_apb.append(a_item)
+                
+                if candidatos_apb:
+                    soma_valores = sum(c["valor"] for c in candidatos_apb)
+                    if abs(soma_valores - b_item["valor"]) < 0.01:
+                        for c in candidatos_apb:
+                            c["matched"] = True
+                        
+                        matches.append({
+                            "banco_data": b_item["data"],
+                            "banco_descricao": b_item["descricao"],
+                            "banco_documento": b_item["documento"],
+                            "banco_valor": b_item["valor"],
+                            "apb_data": ", ".join(list(set([c["data"] for c in candidatos_apb if c["data"]]))),
+                            "apb_documento": ", ".join([c["documento"] for c in candidatos_apb if c["documento"]]),
+                            "apb_fornecedor": candidatos_apb[0]["fornecedor"],
+                            "apb_valor": soma_valores,
+                            "cnpj_cpf": candidatos_apb[0]["cnpj_cpf"],
+                            "dados_bancarios": candidatos_apb[0]["dados_bancarios"],
+                            "status": "conciliado",
+                            "situacao": b_item.get("situacao", "BB-LIB")
+                        })
+                        continue
+
+            if matched_apb:
+                matched_apb["matched"] = True
+                matches.append({
+                    "banco_data": b_item["data"],
+                    "banco_descricao": b_item["descricao"],
+                    "banco_documento": b_item["documento"],
+                    "banco_valor": b_item["valor"],
+                    "apb_data": matched_apb["data"],
+                    "apb_documento": matched_apb["documento"],
+                    "apb_fornecedor": matched_apb["fornecedor"],
+                    "apb_valor": matched_apb["valor"],
+                    "cnpj_cpf": matched_apb["cnpj_cpf"],
+                    "dados_bancarios": matched_apb["dados_bancarios"],
+                    "status": status,
+                    "situacao": b_item.get("situacao", "BB-LIB")
+                })
+            else:
+                matches.append({
+                    "banco_data": b_item["data"],
+                    "banco_descricao": b_item["descricao"],
+                    "banco_documento": b_item["documento"],
+                    "banco_valor": b_item["valor"],
+                    "apb_data": "",
+                    "apb_documento": "",
+                    "apb_fornecedor": "",
+                    "apb_valor": 0.0,
+                    "cnpj_cpf": "",
+                    "dados_bancarios": "",
+                    "status": "nao_encontrado",
+                    "situacao": b_item.get("situacao", "BB-LIB")
+                })
+
+        for a_item in apb_list:
+            if not a_item["matched"]:
+                matches.append({
+                    "banco_data": "",
+                    "banco_descricao": "",
+                    "banco_documento": "",
+                    "banco_valor": 0.0,
+                    "apb_data": a_item["data"],
+                    "apb_documento": a_item["documento"],
+                    "apb_fornecedor": a_item["fornecedor"],
+                    "apb_valor": a_item["valor"],
+                    "cnpj_cpf": a_item["cnpj_cpf"],
+                    "dados_bancarios": a_item["dados_bancarios"],
+                    "status": "nao_encontrado",
+                    "situacao": ""
+                })
+
+        print(f"[DEBUG CONCILIACAO] Cruzamento concluído com sucesso. Total de registros para conferência: {len(matches)}")
+        return {"sucesso": True, "conferencia": matches}
+    except Exception as e:
+        import traceback
+        print("[ERROR CONCILIACAO] Ocorreu uma exceção durante o cruzamento:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/conciliacao-pagamentos/exportar")
+def exportar_conciliacao(dados: List[dict]):
+    try:
+        df = pd.DataFrame(dados)
+        df_rename = df.rename(columns={
+            "banco_data": "Data Banco",
+            "banco_descricao": "Descrição Banco",
+            "banco_documento": "Doc Banco",
+            "banco_valor": "Valor Banco",
+            "apb_data": "Data APB",
+            "apb_documento": "Doc APB",
+            "apb_fornecedor": "Fornecedor APB",
+            "apb_valor": "Valor APB",
+            "cnpj_cpf": "CNPJ/CPF APB",
+            "dados_bancarios": "Dados Bancários APB",
+            "status": "Status Conciliação",
+            "situacao": "Situação Banco"
+        })
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_rename.to_excel(writer, index=False, sheet_name='Conciliação')
+            
+        output.seek(0)
+        
+        headers_response = {
+            'Content-Disposition': 'attachment; filename="conciliacao_pagamentos.xlsx"',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/plano-saude/sorriso/analisar")
+async def analisar_plano_saude_sorriso(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo inválido")
+        
+    try:
+        content = await file.read()
+        
+        # Obter todos os colaboradores do banco de dados para passar como candidatos ao Gemini
+        colab_repo = ColaboradorRepository(db)
+        # Buscar colaboradores do banco de dados
+        colabs_db, _ = colab_repo.get_all(limit=5000)
+        nomes_colaboradores = [c.nome for c in colabs_db]
+        
+        ia = IAService()
+        res_ia = await ia.analisar_plano_saude_sorriso(
+            file_content=content,
+            file_name=file.filename,
+            colaboradores=nomes_colaboradores
+        )
+        
+        titulares_extraidos = res_ia.get("titulares", [])
+        
+        # Injetar o Centro de Custo correspondente do banco para cada titular
+        for t in titulares_extraidos:
+            colab = colab_repo.get_by_nome(t.get("nome_db", ""))
+            if not colab:
+                colab = colab_repo.get_by_nome(t.get("nome_pdf", ""))
+            if colab and colab.centro_custo:
+                t["centro_custo"] = str(colab.centro_custo.codigo)
+            else:
+                t["centro_custo"] = "N/D"
+        
+        # Validations in python
+        # 1. Confirmar que cada titular aparece apenas uma vez
+        nomes_titulares = [t["nome_pdf"].strip().upper() for t in titulares_extraidos]
+        titulares_unicos = set(nomes_titulares)
+        
+        # 2. Verificar que nenhum dependente foi listado como titular
+        nomes_dependentes = []
+        for t in titulares_extraidos:
+            for d in t.get("dependentes", []):
+                nomes_dependentes.append(d["nome"].strip().upper())
+                
+        intersection = titulares_unicos.intersection(set(nomes_dependentes))
+        
+        # 3. Confirmar que a soma dos valores individuais é igual ao TOTAL GERAL
+        soma_individual = 0.0
+        soma_grupo = 0.0
+        for t in titulares_extraidos:
+            val_tit = t["valor_titular"]
+            val_deps = sum(d["valor"] for d in t.get("dependentes", []))
+            soma_individual += val_tit + val_deps
+            soma_grupo += t["valor_total"]
+            
+        # Validations object for frontend badges/alerts
+        validacoes = {
+            "apenas_titulares_na_tabela": True,
+            "sem_titulares_duplicados": len(nomes_titulares) == len(titulares_unicos),
+            "sem_dependentes_como_titulares": len(intersection) == 0,
+            "soma_individual_bate_com_total_geral": round(soma_individual, 2) == round(soma_grupo, 2),
+            "titulares_count": len(titulares_extraidos),
+            "dependentes_count": len(nomes_dependentes),
+            "total_count": len(titulares_extraidos) + len(nomes_dependentes)
+        }
+        
+        validacoes_sucesso = all([
+            validacoes["sem_titulares_duplicados"],
+            validacoes["sem_dependentes_como_titulares"],
+            validacoes["soma_individual_bate_com_total_geral"]
+        ])
+        
+        return {
+            "sucesso": True,
+            "dados": titulares_extraidos,
+            "validacoes": validacoes,
+            "validacoes_sucesso": validacoes_sucesso,
+            "total_geral": round(soma_grupo, 2)
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DependentConfirmar(BaseModel):
+    nome: str
+    valor: float
+
+class TitularConfirmar(BaseModel):
+    nome_pdf: str
+    nome_db: str
+    valor_titular: float
+    dependentes: List[DependentConfirmar]
+    valor_total: float
+    centro_custo: Optional[str] = "N/D"
+
+class ConfirmarImportacaoSorrisoPayload(BaseModel):
+    nomeArquivo: str
+    titulares: List[TitularConfirmar]
+
+@router.post("/plano-saude/sorriso/confirmar")
+def confirmar_importacao_plano_saude_sorriso(
+    payload: ConfirmarImportacaoSorrisoPayload,
+    db: Session = Depends(get_db)
+):
+    try:
+        from app.models.importacao import Importacao
+        from app.models.movimentacao import Movimentacao
+        from app.models.empresa import Empresa
+        from app.repositories.empresa_repository import EmpresaRepository
+        from app.repositories.colaborador_repository import ColaboradorRepository
+        from app.repositories.categoria_repository import CategoriaRepository
+        from app.schemas.categoria import CategoriaCreate
+        
+        emp_repo = EmpresaRepository(db)
+        colab_repo = ColaboradorRepository(db)
+        cat_repo = CategoriaRepository(db)
+        
+        # 1. Encontrar ou criar Categoria "Plano de Saúde"
+        cat = cat_repo.get_by_nome("Plano de Saúde")
+        if not cat:
+            cat = cat_repo.get_by_nome("Plano de Saude")
+        if not cat:
+            try:
+                # Criar nova categoria
+                novo_cat = CategoriaCreate(nome="Plano de Saúde", descricao="Despesas com planos de saúde e odontológicos")
+                cat = cat_repo.create(novo_cat)
+            except Exception:
+                # Fallback para categoria "Outros" (ID 8) se falhar
+                cat = cat_repo.get_by_id(8)
+                if not cat:
+                    raise HTTPException(status_code=400, detail="Categoria Plano de Saúde não encontrada e fallback falhou.")
+        
+        # 2. Encontrar empresa "RDV - SANTA MARIA"
+        emp = emp_repo.get_by_nome("RDV - SANTA MARIA")
+        if not emp:
+            # Fallback para a primeira empresa cadastrada no banco se não encontrar
+            from app.models.empresa import Empresa as ModelEmpresa
+            empresas_todas = db.query(ModelEmpresa).all()
+            if empresas_todas:
+                emp = empresas_todas[0]
+            else:
+                raise HTTPException(status_code=400, detail="Empresa RDV - SANTA MARIA não encontrada e nenhuma outra cadastrada.")
+                
+        # 3. Criar registro de Importacao
+        extensao = payload.nomeArquivo.split('.')[-1] if '.' in payload.nomeArquivo else 'pdf'
+        nova_importacao = Importacao(
+            nomeArquivo=payload.nomeArquivo,
+            extensaoArquivo=extensao,
+            idEmpresa=emp.idEmpresas,
+            tipo="PLANO_SAUDE_SORRISO"
+        )
+        db.add(nova_importacao)
+        db.flush() # Gerar idImportacoes
+        
+        movimentacoes_criadas = 0
+        erros_colaboradores = []
+        
+        # 4. Iterar titulares e criar movimentações
+        for t in payload.titulares:
+            colab = colab_repo.get_by_nome(t.nome_db)
+            if not colab:
+                colab = colab_repo.get_by_nome(t.nome_pdf)
+            if not colab:
+                from app.models.colaborador import Colaborador as ModelColab
+                colab = db.query(ModelColab).filter(ModelColab.nome.ilike(t.nome_db)).first()
+            if not colab:
+                clean_name = t.nome_db.replace(" da ", " ").replace(" de ", " ").replace(" dos ", " ").replace(" do ", " ").replace(" e ", " ")
+                colab = db.query(ModelColab).filter(ModelColab.nome.ilike(f"%{clean_name}%")).first()
+                
+            if not colab:
+                erros_colaboradores.append(t.nome_db)
+                continue
+                
+            # Atualizar Centro de Custo do Colaborador se foi modificado
+            if t.centro_custo and t.centro_custo != "N/D":
+                try:
+                    cc_code = int(t.centro_custo.strip())
+                    from app.repositories.centro_custo_repository import centro_custo_repository
+                    cc_db = centro_custo_repository.get_by_codigo(db, cc_code)
+                    if cc_db and colab.idCentroCusto != cc_db.idCentroCusto:
+                        colab.idCentroCusto = cc_db.idCentroCusto
+                        db.add(colab)
+                except Exception as ex:
+                    print(f"[WARN] Falha ao atualizar Centro de Custo do Colaborador: {ex}")
+                
+            nova_mov = Movimentacao(
+                idCategoria=cat.idCategorias,
+                idColaborador=colab.idColaborador,
+                idEmpresa=emp.idEmpresas,
+                idImportacoes=nova_importacao.idImportacoes,
+                valor=t.valor_total
+            )
+            db.add(nova_mov)
+            movimentacoes_criadas += 1
+            
+        if erros_colaboradores:
+            print(f"[WARN] Colaboradores não encontrados: {erros_colaboradores}")
+            
+        db.commit()
+        return {
+            "sucesso": True,
+            "idImportacoes": nova_importacao.idImportacoes,
+            "movimentacoes_criadas": movimentacoes_criadas,
+            "erros_colaboradores": erros_colaboradores
+        }
+    except Exception as e:
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExportarSorrisoExcelPayload(BaseModel):
+    titulares: List[TitularConfirmar]
+
+@router.post("/plano-saude/sorriso/exportar")
+def exportar_sorriso_excel(
+    payload: ExportarSorrisoExcelPayload
+):
+    try:
+        rows = []
+        total_geral = 0.0
+        for t in payload.titulares:
+            rows.append({
+                "Beneficiário (Titular)": t.nome_db or t.nome_pdf,
+                "Centro de Custo": t.centro_custo or "N/D",
+                "Valor Total": t.valor_total
+            })
+            total_geral += t.valor_total
+            
+        # Linha do Total Geral
+        rows.append({
+            "Beneficiário (Titular)": "TOTAL GERAL",
+            "Centro de Custo": "",
+            "Valor Total": total_geral
+        })
+        
+        df = pd.DataFrame(rows)
+        
+        # Formatar valor total como R$ string
+        df["Valor Total"] = df["Valor Total"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Consolidação Sorriso')
+            
+        output.seek(0)
+        
+        headers_response = {
+            'Content-Disposition': 'attachment; filename="planilha_consolidada_sorriso.xlsx"',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/plano-saude/unimed-odonto/analisar")
+async def analisar_plano_saude_unimed_odonto(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        from app.models.colaborador import Colaborador
+        from app.repositories.colaborador_repository import ColaboradorRepository
+        from sqlalchemy.orm import joinedload
+        
+        colab_repo = ColaboradorRepository(db)
+        content = await file.read()
+        
+        colabs_db = db.query(Colaborador).all()
+        nomes_colaboradores = [c.nome for c in colabs_db]
+        
+        ia = IAService()
+        res_ia = await ia.analisar_plano_saude_unimed_odonto(
+            file_content=content,
+            file_name=file.filename,
+            colaboradores=nomes_colaboradores
+        )
+        
+        titulares_extraidos = res_ia.get("titulares", [])
+        
+        for t in titulares_extraidos:
+            colab = db.query(Colaborador).options(
+                joinedload(Colaborador.centro_custo),
+                joinedload(Colaborador.unidade)
+            ).filter(Colaborador.nome == t.get("nome_db", "")).first()
+            
+            if not colab:
+                colab = db.query(Colaborador).options(
+                    joinedload(Colaborador.centro_custo),
+                    joinedload(Colaborador.unidade)
+                ).filter(Colaborador.nome == t.get("nome_pdf", "")).first()
+                
+            if colab:
+                if colab.centro_custo:
+                    t["centro_custo"] = str(colab.centro_custo.codigo)
+                else:
+                    t["centro_custo"] = "N/D"
+                if colab.unidade:
+                    t["unidade"] = str(colab.unidade.codigo)
+                else:
+                    t["unidade"] = "N/D"
+            else:
+                t["centro_custo"] = "N/D"
+                t["unidade"] = "N/D"
+        
+        nomes_titulares = [t["nome_pdf"].strip().upper() for t in titulares_extraidos]
+        titulares_unicos = set(nomes_titulares)
+        
+        nomes_dependentes = []
+        for t in titulares_extraidos:
+            for d in t.get("dependentes", []):
+                nomes_dependentes.append(d["nome"].strip().upper())
+                
+        intersection = titulares_unicos.intersection(set(nomes_dependentes))
+        
+        soma_individual = 0.0
+        soma_grupo = 0.0
+        for t in titulares_extraidos:
+            val_tit = t["valor_titular"]
+            val_deps = sum(d["valor"] for d in t.get("dependentes", []))
+            soma_individual += val_tit + val_deps
+            soma_grupo += t["valor_total"]
+            
+        validacoes = {
+            "apenas_titulares_na_tabela": True,
+            "sem_titulares_duplicados": len(nomes_titulares) == len(titulares_unicos),
+            "sem_dependentes_como_titulares": len(intersection) == 0,
+            "soma_individual_bate_com_total_geral": round(soma_individual, 2) == round(soma_grupo, 2),
+            "titulares_count": len(titulares_extraidos),
+            "dependentes_count": len(nomes_dependentes),
+            "total_count": len(titulares_extraidos) + len(nomes_dependentes)
+        }
+        
+        validacoes_sucesso = all([
+            validacoes["sem_titulares_duplicados"],
+            validacoes["sem_dependentes_como_titulares"],
+            validacoes["soma_individual_bate_com_total_geral"]
+        ])
+        
+        return {
+            "sucesso": True,
+            "dados": titulares_extraidos,
+            "validacoes": validacoes,
+            "validacoes_sucesso": validacoes_sucesso,
+            "total_geral": round(soma_grupo, 2)
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DependentConfirmarUnimed(BaseModel):
+    nome: str
+    tipo: str
+    valor: float
+
+class TitularConfirmarUnimed(BaseModel):
+    nome_pdf: str
+    nome_db: str
+    matricula: str
+    valor_titular: float
+    dependentes: List[DependentConfirmarUnimed]
+    valor_total: float
+    centro_custo: Optional[str] = "N/D"
+    unidade: Optional[str] = "N/D"
+
+class ConfirmarImportacaoUnimedPayload(BaseModel):
+    nomeArquivo: str
+    titulares: List[TitularConfirmarUnimed]
+
+@router.post("/plano-saude/unimed-odonto/confirmar")
+def confirmar_importacao_plano_saude_unimed_odonto(
+    payload: ConfirmarImportacaoUnimedPayload,
+    db: Session = Depends(get_db)
+):
+    try:
+        from app.models.importacao import Importacao
+        from app.models.movimentacao import Movimentacao
+        from app.models.empresa import Empresa
+        from app.repositories.empresa_repository import EmpresaRepository
+        from app.repositories.colaborador_repository import ColaboradorRepository
+        from app.repositories.categoria_repository import CategoriaRepository
+        from app.schemas.categoria import CategoriaCreate
+        
+        emp_repo = EmpresaRepository(db)
+        colab_repo = ColaboradorRepository(db)
+        cat_repo = CategoriaRepository(db)
+        
+        cat = cat_repo.get_by_nome("Plano de Saúde")
+        if not cat:
+            cat = cat_repo.get_by_nome("Plano de Saude")
+        if not cat:
+            try:
+                novo_cat = CategoriaCreate(nome="Plano de Saúde", descricao="Despesas com planos de saúde e odontológicos")
+                cat = cat_repo.create(novo_cat)
+            except Exception:
+                cat = cat_repo.get_by_id(8)
+                if not cat:
+                    raise HTTPException(status_code=400, detail="Categoria Plano de Saúde não encontrada e fallback falhou.")
+        
+        emp = emp_repo.get_by_nome("RDV - SANTA MARIA")
+        if not emp:
+            from app.models.empresa import Empresa as ModelEmpresa
+            empresas_todas = db.query(ModelEmpresa).all()
+            if empresas_todas:
+                emp = empresas_todas[0]
+            else:
+                raise HTTPException(status_code=400, detail="Empresa RDV - SANTA MARIA não encontrada.")
+                
+        extensao = payload.nomeArquivo.split('.')[-1] if '.' in payload.nomeArquivo else 'pdf'
+        nova_importacao = Importacao(
+            nomeArquivo=payload.nomeArquivo,
+            extensaoArquivo=extensao,
+            idEmpresa=emp.idEmpresas,
+            tipo="PLANO_SAUDE_UNIMED_ODONTO"
+        )
+        db.add(nova_importacao)
+        db.flush()
+        
+        movimentacoes_criadas = 0
+        erros_colaboradores = []
+        
+        for t in payload.titulares:
+            colab = colab_repo.get_by_nome(t.nome_db)
+            if not colab:
+                colab = colab_repo.get_by_nome(t.nome_pdf)
+            if not colab:
+                from app.models.colaborador import Colaborador as ModelColab
+                colab = db.query(ModelColab).filter(ModelColab.nome.ilike(t.nome_db)).first()
+            if not colab:
+                clean_name = t.nome_db.replace(" da ", " ").replace(" de ", " ").replace(" dos ", " ").replace(" do ", " ").replace(" e ", " ")
+                colab = db.query(ModelColab).filter(ModelColab.nome.ilike(f"%{clean_name}%")).first()
+                
+            if not colab:
+                erros_colaboradores.append(t.nome_db)
+                continue
+                
+            if t.centro_custo and t.centro_custo != "N/D":
+                try:
+                    cc_code = int(t.centro_custo.strip())
+                    from app.repositories.centro_custo_repository import centro_custo_repository
+                    cc_db = centro_custo_repository.get_by_codigo(db, cc_code)
+                    if cc_db and colab.idCentroCusto != cc_db.idCentroCusto:
+                        colab.idCentroCusto = cc_db.idCentroCusto
+                        db.add(colab)
+                except Exception as ex:
+                    print(f"[WARN] Falha ao atualizar Centro de Custo do Colaborador: {ex}")
+                    
+            if t.unidade and t.unidade != "N/D":
+                try:
+                    from app.models.unidade import Unidade as ModelUnidade
+                    unidade_db = db.query(ModelUnidade).filter(ModelUnidade.codigo == int(t.unidade.strip())).first()
+                    if unidade_db and colab.idUnidade != unidade_db.idUnidade:
+                        colab.idUnidade = unidade_db.idUnidade
+                        db.add(colab)
+                except Exception as ex:
+                    print(f"[WARN] Falha ao atualizar Unidade do Colaborador: {ex}")
+                
+            nova_mov = Movimentacao(
+                idCategoria=cat.idCategorias,
+                idColaborador=colab.idColaborador,
+                idEmpresa=emp.idEmpresas,
+                idImportacoes=nova_importacao.idImportacoes,
+                valor=t.valor_total
+            )
+            db.add(nova_mov)
+            movimentacoes_criadas += 1
+            
+        if erros_colaboradores:
+            print(f"[WARN] Colaboradores não encontrados: {erros_colaboradores}")
+            
+        db.commit()
+        return {
+            "sucesso": True,
+            "idImportacoes": nova_importacao.idImportacoes,
+            "movimentacoes_criadas": movimentacoes_criadas,
+            "erros_colaboradores": erros_colaboradores
+        }
+    except Exception as e:
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExportarUnimedExcelPayload(BaseModel):
+    titulares: List[TitularConfirmarUnimed]
+
+@router.post("/plano-saude/unimed-odonto/exportar")
+def exportar_unimed_odonto_excel(
+    payload: ExportarUnimedExcelPayload
+):
+    try:
+        rows = []
+        total_geral = 0.0
+        for t in payload.titulares:
+            rows.append({
+                "Unidade": t.unidade or "N/D",
+                "Beneficiário (Titular)": t.nome_db or t.nome_pdf,
+                "Centro de Custo": t.centro_custo or "N/D",
+                "Valor Total": t.valor_total
+            })
+            total_geral += t.valor_total
+            
+        rows.append({
+            "Unidade": "",
+            "Beneficiário (Titular)": "TOTAL GERAL",
+            "Centro de Custo": "",
+            "Valor Total": total_geral
+        })
+        
+        df = pd.DataFrame(rows)
+        df["Valor Total"] = df["Valor Total"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Consolidação Unimed')
+            
+        output.seek(0)
+        
+        headers_response = {
+            'Content-Disposition': 'attachment; filename="planilha_consolidada_unimed_odonto.xlsx"',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 

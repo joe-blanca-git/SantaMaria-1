@@ -6,23 +6,44 @@ export const MOCK_MODULES: AppModule[] = [
     name: 'Plano de Saúde',
     icon: 'fa-solid fa-heart-pulse',
     route: '/plano-saude',
-    description: 'Gerencie beneficiários, planos, atendimentos, autorizações e muito mais.',
-    isActive: true
+    description: 'Conciliação de planos.',
+    isActive: true,
+    category: 'Saúde'
   },
   {
     id: 'mod-viagens',
     name: 'Despesas de Viagens',
     icon: 'fa-solid fa-plane-departure',
     route: '/despesas-viagens',
-    description: 'Gerencie despesas, reembolsos e prestação de contas de viagens.',
-    isActive: true
+    description: 'Relatórios e dashboards',
+    isActive: true,
+    category: 'Financeiro'
   },
   {
     id: 'mod-extratores',
     name: 'Extratores',
     icon: 'fa-solid fa-file-import',
     route: '/extratores',
-    description: 'Configure e gerencie extratores de dados inteligentes para importação automatizada.',
-    isActive: true
+    description: 'Importação e processamento.',
+    isActive: true,
+    category: 'Importação'
+  },
+  {
+    id: 'mod-inadimplencia',
+    name: 'Inadimplência',
+    icon: 'fa-solid fa-file-invoice-dollar',
+    route: '/inadimplencia',
+    description: 'Gestão de inadimplência.',
+    isActive: true,
+    category: 'Cobrança'
+  },
+  {
+    id: 'mod-conciliacao',
+    name: 'Conciliação de Pagamentos',
+    icon: 'fa-solid fa-scale-balanced',
+    route: '/conciliacao-pagamentos',
+    description: 'Conciliação de pagamentos.',
+    isActive: true,
+    category: 'Pagamentos'
   }
 ];

@@ -5,4 +5,5 @@ export interface AppModule {
   route: string;
   description: string;
   isActive: boolean;
+  category?: string;
 }

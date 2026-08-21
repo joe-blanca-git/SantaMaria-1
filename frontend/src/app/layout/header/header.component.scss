@@ -120,6 +120,26 @@
     align-items: center;
     gap: 1.5rem;
 
+    .theme-toggle-btn {
+      background: none;
+      border: none;
+      font-size: 1.15rem;
+      cursor: pointer;
+      color: $gray-500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      transition: all $transition-base;
+
+      &:hover {
+        color: $primary;
+        background-color: rgba($gray-500, 0.08);
+      }
+    }
+
     .btn-icon {
       background: none;
       border: none;

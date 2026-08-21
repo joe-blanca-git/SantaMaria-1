@@ -11,6 +11,12 @@ export interface Importacao {
   tipo: string;
   createdAt: string;
   updatedAte?: string;
+  empresa?: {
+    idEmpresas: number;
+    nome: string;
+    descricao?: string;
+  };
+  valor_total?: number;
 }
 
 export interface ImportacaoPaginatedResponse {
@@ -84,6 +90,17 @@ export class ImportacoesService {
     return this.http.get<any>(`${this.apiUrl}/dashboard`, { params });
   }
 
+  obterDadosDashboardAnalitico(filtros: any): Observable<any> {
+    let params = new HttpParams();
+    if (filtros.data_inicio) params = params.set('data_inicio', filtros.data_inicio);
+    if (filtros.data_fim) params = params.set('data_fim', filtros.data_fim);
+    if (filtros.id_empresa) params = params.set('id_empresa', filtros.id_empresa.toString());
+    if (filtros.id_colaborador) params = params.set('id_colaborador', filtros.id_colaborador.toString());
+    if (filtros.id_categoria) params = params.set('id_categoria', filtros.id_categoria.toString());
+    
+    return this.http.get<any>(`${this.apiUrl}/dashboard/analitico`, { params });
+  }
+
   extrairAtacadao(file: File): Observable<Blob> {
     const formData = new FormData();
     formData.append('file', file);
@@ -132,6 +149,59 @@ export class ImportacoesService {
     formData.append('savegnago_file', savegnagoFile);
     formData.append('acr_file', acrFile);
     return this.http.post(`${this.apiUrl}/savegnago/conciliar`, formData, {
+      responseType: 'blob'
+    });
+  }
+
+  conciliarPagamentos(apbFile: File, bancoFiles: File[]): Observable<any> {
+    const formData = new FormData();
+    formData.append('apb_file', apbFile);
+    bancoFiles.forEach((file) => {
+      formData.append('banco_files', file);
+    });
+    return this.http.post<any>(`${this.apiUrl}/conciliacao-pagamentos/cruzamento`, formData);
+  }
+
+  exportarConciliacao(dados: any[]): Observable<Blob> {
+    return this.http.post(`${this.apiUrl}/conciliacao-pagamentos/exportar`, dados, {
+      responseType: 'blob'
+    });
+  }
+
+  analisarSorriso(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<any>(`${this.apiUrl}/plano-saude/sorriso/analisar`, formData);
+  }
+
+  confirmarSorriso(nomeArquivo: string, titulares: any[]): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/plano-saude/sorriso/confirmar`, {
+      nomeArquivo,
+      titulares
+    });
+  }
+
+  exportarSorrisoExcel(titulares: any[]): Observable<Blob> {
+    return this.http.post(`${this.apiUrl}/plano-saude/sorriso/exportar`, { titulares }, {
+      responseType: 'blob'
+    });
+  }
+
+  analisarUnimedOdonto(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<any>(`${this.apiUrl}/plano-saude/unimed-odonto/analisar`, formData);
+  }
+
+  confirmarUnimedOdonto(nomeArquivo: string, titulares: any[]): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/plano-saude/unimed-odonto/confirmar`, {
+      nomeArquivo,
+      titulares
+    });
+  }
+
+  exportarUnimedOdontoExcel(titulares: any[]): Observable<Blob> {
+    return this.http.post(`${this.apiUrl}/plano-saude/unimed-odonto/exportar`, { titulares }, {
       responseType: 'blob'
     });
   }

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ISessionService } from '../../core/interfaces/session.service';
 import { AvatarComponent } from '../../shared/components/avatar/avatar.component';
+import { ThemeService } from '../../core/services/theme.service';
 
 @Component({
   selector: 'app-header',
@@ -13,5 +14,6 @@ import { AvatarComponent } from '../../shared/components/avatar/avatar.component
 })
 export class HeaderComponent {
   sessionService = inject(ISessionService);
+  themeService = inject(ThemeService);
   user = this.sessionService.currentUser;
 }

@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+from app.schemas.empresa import EmpresaResponse
 
 class ImportacaoBase(BaseModel):
     nomeArquivo: str
@@ -15,6 +16,8 @@ class ImportacaoResponse(ImportacaoBase):
     idImportacoes: int
     createdAt: datetime
     updatedAte: Optional[datetime] = None
+    empresa: Optional[EmpresaResponse] = None
+    valor_total: float = 0.0
 
     class Config:
         from_attributes = True

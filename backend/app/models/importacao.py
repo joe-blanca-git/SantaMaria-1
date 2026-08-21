@@ -15,3 +15,8 @@ class Importacao(Base):
     tipo = Column(String(45), nullable=False)
     
     movimentacoes = relationship("Movimentacao", back_populates="importacao", cascade="all, delete-orphan")
+    empresa = relationship("Empresa")
+
+    @property
+    def valor_total(self) -> float:
+        return sum(m.valor for m in self.movimentacoes)

@@ -50,11 +50,19 @@
   <app-modal 
     [isOpen]="isUploadModalOpen()" 
     [title]="'Importação - ' + (activeCard()?.name || '')" 
-    size="sm" 
-    (closed)="!isProcessing() ? closeModal() : null">
+    [size]="((activeCard()?.id === 'sorriso' || activeCard()?.id === 'unimed-odonto') && processingStep() === 5) ? 'lg' : 'sm'" 
+    (closed)="!isProcessing() && !isSaving() ? closeModal() : null">
     
     <div class="text-center py-3">
       
+      <!-- ERROR DISPLAY -->
+      @if (processingError()) {
+        <div class="alert alert-danger py-2 px-3 mb-3 text-start small mx-auto" style="max-width: 480px;">
+          <i class="fa-solid fa-triangle-exclamation me-2"></i>
+          {{ processingError() }}
+        </div>
+      }
+
       <!-- STEP: FILE SELECTED / READY TO PROCESS -->
       @if (processingStep() === 0) {
         <div class="text-primary mb-3">
@@ -101,6 +109,176 @@
         <p class="text-muted small mt-4 px-3 italic">
           {{ processingText() }}
         </p>
+      }
+      
+      <!-- STEP: SORRISO AUDIT & CONFIRMATION TABLE -->
+      @else if (processingStep() === 5) {
+        <div class="text-start px-2">
+          <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+              <h4 class="mb-1 text-primary">Conferência e Consolidação</h4>
+              <p class="text-muted small mb-0">Confirme os valores do grupo familiar (Titular + Dependentes) antes de gravar.</p>
+            </div>
+            
+            <div class="d-flex gap-2">
+              @if (validacoes()?.sem_titulares_duplicados) {
+                <app-badge variant="success" text="Sem duplicados"></app-badge>
+              } @else {
+                <app-badge variant="danger" text="Duplicações detectadas"></app-badge>
+              }
+              @if (validacoes()?.sem_dependentes_como_titulares) {
+                <app-badge variant="success" text="Sem dependentes como titular"></app-badge>
+              } @else {
+                <app-badge variant="danger" text="Conflito dependente/titular"></app-badge>
+              }
+              @if (validacoes()?.soma_individual_bate_com_total_geral) {
+                <app-badge variant="success" text="Total matemático OK"></app-badge>
+              } @else {
+                <app-badge variant="danger" text="Erro de soma"></app-badge>
+              }
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="table-responsive border rounded mb-3" style="max-height: 350px; overflow-y: auto;">
+            <table class="table table-hover align-middle mb-0 text-start" style="font-size: 13px;">
+              <thead class="table-light sticky-top">
+                <tr>
+                  @if (activeCard()?.id === 'unimed-odonto') {
+                    <th style="font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; font-weight: 600; padding: 10px 16px;">Unidade</th>
+                  }
+                  <th style="font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; font-weight: 600; padding: 10px 16px;">Beneficiário (Titular)</th>
+                  <th style="font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; font-weight: 600; padding: 10px 16px;">Centro de Custo</th>
+                  <th class="text-end" style="font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; font-weight: 600; padding: 10px 16px; width: 120px;">Valor Total</th>
+                  <th class="text-end" style="font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; font-weight: 600; padding: 10px 16px; width: 90px;">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (titular of parsedTitulares(); track titular.nome_pdf; let i = $index) {
+                  <tr>
+                    <!-- Unidade (Unimed Odonto specific) -->
+                    @if (activeCard()?.id === 'unimed-odonto') {
+                      <td style="padding: 8px 16px; color: #4b5563;">
+                        @if (editingRowIndex() === i) {
+                          <ng-select 
+                            [items]="unidadesList()" 
+                            bindLabel="codigo" 
+                            bindValue="codigo" 
+                            [ngModel]="editUnidade()"
+                            (ngModelChange)="editUnidade.set($event ? $event.toString() : '')"
+                            [clearable]="false"
+                            class="custom-ng-select w-100"
+                            style="font-size: 13px;">
+                          </ng-select>
+                        } @else {
+                          {{ titular.unidade || 'N/D' }}
+                        }
+                      </td>
+                    }
+
+                    <!-- Beneficiário -->
+                    <td style="padding: 8px 16px; font-weight: 500; color: #1f2937;">
+                      @if (editingRowIndex() === i) {
+                        <ng-select 
+                          [items]="colaboradoresList()" 
+                          bindLabel="nome" 
+                          bindValue="nome" 
+                          [ngModel]="editNome()"
+                          (ngModelChange)="editNome.set($event); onColaboradorSelected($event)"
+                          [clearable]="false"
+                          class="custom-ng-select w-100"
+                          style="font-size: 13px;">
+                        </ng-select>
+                      } @else {
+                        {{ titular.nome_db || titular.nome_pdf }}
+                      }
+                    </td>
+
+                    <!-- Centro de Custo -->
+                    <td style="padding: 8px 16px; color: #4b5563;">
+                      @if (editingRowIndex() === i) {
+                        <ng-select 
+                          [items]="centrosCustoList()" 
+                          bindLabel="codigo" 
+                          bindValue="codigo" 
+                          [ngModel]="editCentroCusto()"
+                          (ngModelChange)="editCentroCusto.set($event ? $event.toString() : '')"
+                          [clearable]="false"
+                          class="custom-ng-select w-100"
+                          style="font-size: 13px;">
+                        </ng-select>
+                      } @else {
+                        {{ titular.centro_custo || 'N/D' }}
+                      }
+                    </td>
+
+                    <!-- Valor Total -->
+                    <td class="text-end fw-semibold text-dark" style="font-variant-numeric: tabular-nums; padding: 8px 16px;">
+                      @if (editingRowIndex() === i) {
+                        <input type="number" class="form-control form-control-sm text-end" [value]="editValor()" (input)="onEditValorChange($event)" style="font-size: 13px; height: 32px; border-radius: 6px; font-variant-numeric: tabular-nums;">
+                      } @else {
+                        {{ titular.valor_total | currency:'BRL':'symbol':'1.2-2' }}
+                      }
+                    </td>
+
+                    <!-- Ações -->
+                    <td class="text-end" style="padding: 8px 16px;">
+                      @if (editingRowIndex() === i) {
+                        <div class="d-flex justify-content-end gap-1">
+                          <button class="btn btn-sm btn-success p-1 d-flex align-items-center justify-content-center" (click)="saveEdit(i)" style="width: 24px; height: 24px; border-radius: 4px; border: none;">
+                            <i class="fa-solid fa-check" style="font-size: 11px; color: white;"></i>
+                          </button>
+                          <button class="btn btn-sm btn-secondary p-1 d-flex align-items-center justify-content-center" (click)="cancelEdit()" style="width: 24px; height: 24px; border-radius: 4px; border: none;">
+                            <i class="fa-solid fa-xmark" style="font-size: 11px; color: white;"></i>
+                          </button>
+                        </div>
+                      } @else {
+                        <button class="btn btn-sm btn-link p-1 text-primary hover-lift" (click)="startEdit(i, titular)" style="width: 24px; height: 24px; border: none; background: transparent;" title="Editar">
+                          <i class="fa-solid fa-pen-to-square" style="font-size: 14px;"></i>
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                }
+                <!-- TOTAL GERAL ROW -->
+                <tr class="table-light fw-bold" style="border-top: 2px solid #e5e7eb;">
+                  <td [attr.colspan]="activeCard()?.id === 'unimed-odonto' ? 3 : 2" style="padding: 12px 16px; font-size: 14px; text-transform: uppercase; color: #111827;">TOTAL GERAL</td>
+                  <td class="text-end text-primary" style="font-size: 14px; font-variant-numeric: tabular-nums; padding: 12px 16px;">
+                    {{ totalGeral() | currency:'BRL':'symbol':'1.2-2' }}
+                  </td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Statistics Alert -->
+          <div class="alert alert-info py-2 px-3 mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2" style="font-size: 12px;">
+            <span>
+              <i class="fa-solid fa-circle-info me-1"></i>
+              Total de beneficiários auditados: <strong>{{ validacoes()?.total_count }}</strong> 
+              ({{ validacoes()?.titulares_count }} titulares, {{ validacoes()?.dependentes_count }} dependentes).
+            </span>
+            <span class="text-secondary">
+              Arquivo: <strong>{{ selectedFile()?.name }}</strong>
+            </span>
+          </div>
+
+          <!-- Confirm / Cancel Actions -->
+          <div class="d-flex justify-content-between align-items-center">
+            <app-button variant="secondary" size="sm" icon="fa-solid fa-file-excel" (clicked)="exportToExcel()" [disabled]="isSaving()">
+              Exportar Excel
+            </app-button>
+            <div class="d-flex gap-2">
+              <app-button variant="secondary" (clicked)="closeModal()" [disabled]="isSaving()">
+                Cancelar
+              </app-button>
+              <app-button variant="primary" (clicked)="confirmAndSave()" [loading]="isSaving()" [disabled]="isSaving() || editingRowIndex() !== null">
+                Confirmar e Gravar
+              </app-button>
+            </div>
+          </div>
+        </div>
       }
       
       <!-- STEP: SUCCESS / REPORT -->

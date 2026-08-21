@@ -12,6 +12,7 @@ export interface Colaborador {
   idCentroCusto: number;
   idCargoColaborador: number;
   idUnidade?: number;
+  papel?: string;
   cargo_colaborador?: CargoColaborador;
   centro_custo?: CentroCusto;
   unidade?: Unidade;

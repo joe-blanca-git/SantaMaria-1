@@ -8,7 +8,7 @@ from app.models.colaborador import Colaborador
 from app.models.unidade import Unidade
 from app.models.categoria import Categoria
 from app.models.empresa import Empresa
-from app.models.centro_custo import CentroEstado
+from app.models.centro_custo import CentroCusto, CentroEstado
 
 class DashboardService:
     def __init__(self, db: Session):
@@ -344,6 +344,230 @@ class DashboardService:
             "tabelaMaioresDespesas": tabela_maiores,
             "spenders": spenders,
             "maiorCrescimento": maior_crescimento
+        }
+
+    def obter_dados_analitico(
+        self,
+        data_inicio: str = None,
+        data_fim: str = None,
+        id_empresa: int = None,
+        id_colaborador: int = None,
+        id_categoria: int = None
+    ) -> Dict[str, Any]:
+        MONTHS_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
+        
+        # Formata datas base
+        if data_inicio:
+            dt_inicio = datetime.strptime(data_inicio, "%Y-%m-%d")
+        else:
+            # 6 meses atrás por padrão
+            dt_inicio = datetime.now() - timedelta(days=180)
+            dt_inicio = dt_inicio.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+        if data_fim:
+            dt_fim = datetime.strptime(data_fim, "%Y-%m-%d")
+        else:
+            dt_fim = datetime.now()
+            
+        # Garante incluir o dia inteiro de data_fim
+        dt_fim_inclusive = dt_fim + timedelta(days=1)
+        
+        # Filtros utilitários
+        def apply_filters(q):
+            q = q.filter(Movimentacao.createdAt >= dt_inicio)
+            q = q.filter(Movimentacao.createdAt < dt_fim_inclusive)
+            if id_empresa:
+                q = q.filter(Movimentacao.idEmpresa == id_empresa)
+            if id_colaborador:
+                q = q.filter(Movimentacao.idColaborador == id_colaborador)
+            if id_categoria:
+                q = q.filter(Movimentacao.idCategoria == id_categoria)
+            return q
+
+        # --- 1. KPI Total ---
+        q_total = self.db.query(func.sum(Movimentacao.valor))
+        q_total = apply_filters(q_total)
+        total_despesas = float(q_total.scalar() or 0)
+
+        # Buscar todos os dados base para agregações em memória
+        # Essa abordagem é consistente com o resto do arquivo e evita problemas de dialeto SQL
+        q_base = self.db.query(
+            Movimentacao.createdAt,
+            Movimentacao.valor,
+            Categoria.nome.label('categoria_nome'),
+            Categoria.idCategorias.label('categoria_id'),
+            CentroCusto.codigo.label('centro_custo_codigo'),
+            CentroCusto.nome.label('centro_custo_nome'),
+            CentroEstado.estado.label('estado'),
+            Colaborador.nome.label('colaborador_nome'),
+            Colaborador.idColaborador.label('colaborador_id'),
+            Colaborador.papel.label('papel'),
+            Empresa.nome.label('empresa_nome')
+        ).join(Categoria, Movimentacao.idCategoria == Categoria.idCategorias)\
+         .join(Colaborador, Movimentacao.idColaborador == Colaborador.idColaborador)\
+         .join(Empresa, Movimentacao.idEmpresa == Empresa.idEmpresas)\
+         .join(CentroCusto, Colaborador.idCentroCusto == CentroCusto.idCentroCusto)\
+         .outerjoin(CentroEstado, CentroCusto.idCentroCusto == CentroEstado.idCentroCusto)
+         
+        q_base = apply_filters(q_base).order_by(Movimentacao.createdAt.desc())
+        all_movs = q_base.all()
+
+        # Estruturas de dados para agregações
+        meses_totais = {}
+        categorias_totais = {}
+        centro_custo_mensal = {}
+        centro_custo_totais = {}
+        estados_totais = {}
+        butterfly_comercial = {}
+        butterfly_marketing = {}
+        colaboradores_totais = {}
+        colab_matrix_map = {}
+        
+        detalhes = []
+        all_months_keys = set()
+        
+        for idx, row in enumerate(all_movs):
+            date_val = row.createdAt
+            val = float(row.valor)
+            cat_name = row.categoria_nome
+            cat_id = row.categoria_id
+            cc_nome = row.centro_custo_nome
+            estado = row.estado or "-"
+            colab_nome = row.colaborador_nome
+            papel = (row.papel or "").strip().upper()
+            
+            # Detalhes (limitar a 200 itens para não pesar o frontend)
+            if idx < 200:
+                detalhes.append({
+                    "data": date_val.strftime("%d/%m/%Y"),
+                    "categoria": cat_name,
+                    "centroCustoNome": cc_nome,
+                    "colaboradorNome": colab_nome,
+                    "estado": estado,
+                    "valor": val,
+                    "empresa": row.empresa_nome
+                })
+                
+            # Mês/Ano para Barras Verticais e Evolução
+            month_key = f"{date_val.year}-{date_val.month:02d}"
+            all_months_keys.add(month_key)
+            
+            meses_totais[month_key] = meses_totais.get(month_key, 0) + val
+            
+            # Categoria Barras e Donut
+            if cat_name not in categorias_totais:
+                categorias_totais[cat_name] = {"id": cat_id, "valor": 0}
+            categorias_totais[cat_name]["valor"] += val
+            
+            # Evolução por Centro de Custo e Total por Centro de Custo
+            cc_display = cc_nome or "Sem Centro de Custo"
+            centro_custo_totais[cc_display] = centro_custo_totais.get(cc_display, 0) + val
+            
+            if cc_display not in centro_custo_mensal:
+                centro_custo_mensal[cc_display] = {}
+            centro_custo_mensal[cc_display][month_key] = centro_custo_mensal[cc_display].get(month_key, 0) + val
+            
+            # Mapa
+            estado_clean = clean_state_name(estado)
+            if estado_clean not in estados_totais:
+                estados_totais[estado_clean] = {"value": 0.0, "qtd": 0}
+            estados_totais[estado_clean]["value"] += val
+            estados_totais[estado_clean]["qtd"] += 1
+            
+            # Butterfly (Comercial vs Marketing)
+            if 'COMERCIAL' in papel:
+                butterfly_comercial[cat_name] = butterfly_comercial.get(cat_name, 0) + val
+            elif 'MARKETING' in papel:
+                butterfly_marketing[cat_name] = butterfly_marketing.get(cat_name, 0) + val
+                
+            # Ranking Colaboradores e Matriz
+            colaboradores_totais[colab_nome] = colaboradores_totais.get(colab_nome, 0) + val
+            if colab_nome not in colab_matrix_map:
+                colab_matrix_map[colab_nome] = {}
+            colab_matrix_map[colab_nome][cat_name] = colab_matrix_map[colab_nome].get(cat_name, 0) + val
+
+        # --- Formatação dos Resultados ---
+        
+        sorted_month_keys = sorted(list(all_months_keys))
+        month_labels = []
+        for mk in sorted_month_keys:
+            y, m = map(int, mk.split('-'))
+            short_m = MONTHS_PT[m]
+            month_labels.append(f"{short_m}/{str(y)[2:]}")
+            
+        barras_verticais = [round(meses_totais.get(mk, 0), 2) for mk in sorted_month_keys]
+        
+        # Categorias
+        cat_sorted = sorted([{"name": k, "value": round(v["valor"], 2), "id": v["id"]} for k, v in categorias_totais.items()], key=lambda x: x["value"], reverse=True)
+        
+        # Top 5 Centros de Custo
+        top_cc = sorted(centro_custo_totais.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_cc_names = [cc[0] for cc in top_cc]
+        
+        evol_cc_series = []
+        for cc_name in top_cc_names:
+            cat_data = []
+            for mk in sorted_month_keys:
+                cat_data.append(round(centro_custo_mensal[cc_name].get(mk, 0.0), 2))
+            evol_cc_series.append({
+                "name": cc_name,
+                "data": cat_data
+            })
+            
+        centro_custo_barras = [{"name": cc[0], "value": round(cc[1], 2)} for cc in top_cc]
+        
+        # Mapa
+        mapa_data = [{"name": st, "value": round(data["value"], 2), "qtd": data["qtd"]} for st, data in estados_totais.items()]
+        
+        # Butterfly
+        # Pegar todas as categorias presentes nas movimentações
+        all_cats = list(categorias_totais.keys())
+        butterfly = {
+            "categorias": all_cats,
+            "comercial": [round(butterfly_comercial.get(c, 0), 2) for c in all_cats],
+            "marketing": [round(butterfly_marketing.get(c, 0), 2) for c in all_cats]
+        }
+        
+        # Rankings
+        total_geral = total_despesas or 1
+        ranking_colab = sorted(colaboradores_totais.items(), key=lambda x: x[1], reverse=True)[:10]
+        ranking_colaboradores = [{"posicao": i+1, "nome": k, "valor": round(v, 2), "pct": round((v/total_geral)*100, 1)} for i, (k,v) in enumerate(ranking_colab)]
+        
+        ranking_categorias = [{"posicao": i+1, "nome": c["name"], "valor": c["value"], "pct": round((c["value"]/total_geral)*100, 1)} for i, c in enumerate(cat_sorted[:10])]
+        
+        # Matrix Detalhes
+        detalhes_categorias_colunas = sorted(list(categorias_totais.keys()))
+        detalhes_totais_categoria = {k: round(v["valor"], 2) for k, v in categorias_totais.items()}
+        
+        matriz = []
+        for colab, cat_vals in colab_matrix_map.items():
+            row_total = sum(cat_vals.values())
+            matriz.append({
+                "colaboradorNome": colab,
+                "valoresPorCategoria": {k: round(v, 2) for k, v in cat_vals.items()},
+                "total": round(row_total, 2)
+            })
+        matriz.sort(key=lambda x: x["colaboradorNome"])
+        
+        return {
+            "analiticoTotalDespesas": round(total_despesas, 2),
+            "meses": month_labels,
+            "barrasVerticais": barras_verticais,
+            "categoriaBarras": cat_sorted,
+            "evolucaoCentroCusto": {
+                "meses": month_labels,
+                "series": evol_cc_series
+            },
+            "centroCustoBarras": centro_custo_barras,
+            "mapaData": mapa_data,
+            "butterfly": butterfly,
+            "rankingColaboradores": ranking_colaboradores,
+            "rankingCategorias": ranking_categorias,
+            "detalhesMatrizOriginal": matriz,
+            "detalhesCategoriasColunas": detalhes_categorias_colunas,
+            "detalhesTotaisPorCategoria": detalhes_totais_categoria,
+            "detalhesTotalGeral": round(total_despesas, 2),
+            "detalhes": detalhes
         }
 
 def clean_state_name(desc: str) -> str:

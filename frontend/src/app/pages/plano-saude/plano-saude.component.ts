@@ -1,11 +1,17 @@
-import { Component, signal, ViewChild, ElementRef } from '@angular/core';
+import { Component, signal, ViewChild, ElementRef, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { NgSelectModule } from '@ng-select/ng-select';
 import { CardComponent } from '../../shared/components/card/card.component';
 import { ButtonComponent } from '../../shared/components/button/button.component';
 import { ModalComponent } from '../../shared/components/modal/modal.component';
 import { LoadingComponent } from '../../shared/components/loading/loading.component';
 import { BadgeComponent } from '../../shared/components/badge/badge.component';
+import { ImportacoesService } from '../../core/services/importacoes.service';
+import { ColaboradoresService } from '../../core/services/colaboradores.service';
+import { CentrosCustoService } from '../../core/services/centros-custo.service';
+import { UnidadesService } from '../../core/services/unidades.service';
 
 export interface HealthPlanCard {
   id: string;
@@ -24,6 +30,8 @@ export interface HealthPlanCard {
   imports: [
     CommonModule,
     RouterModule,
+    FormsModule,
+    NgSelectModule,
     CardComponent,
     ButtonComponent,
     ModalComponent,
@@ -33,8 +41,64 @@ export interface HealthPlanCard {
   templateUrl: './plano-saude.component.html',
   styleUrl: './plano-saude.component.scss'
 })
-export class PlanoSaudeComponent {
+export class PlanoSaudeComponent implements OnInit {
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+
+  importacoesService = inject(ImportacoesService);
+  colaboradoresService = inject(ColaboradoresService);
+  centrosCustoService = inject(CentrosCustoService);
+  unidadesService = inject(UnidadesService);
+
+  colaboradoresList = signal<any[]>([]);
+  centrosCustoList = signal<any[]>([]);
+  unidadesList = signal<any[]>([]);
+
+  // States for Sorriso health plan import
+  parsedTitulares = signal<any[]>([]);
+  totalGeral = signal<number>(0);
+  validacoes = signal<any>(null);
+  validacoesSucesso = signal<boolean>(true);
+  isSaving = signal<boolean>(false);
+
+  // States for inline editing
+  editingRowIndex = signal<number | null>(null);
+  editNome = signal<string>('');
+  editCentroCusto = signal<string>('');
+  editUnidade = signal<string>('');
+  editValor = signal<number>(0);
+
+  ngOnInit() {
+    this.carregarColaboradores();
+    this.carregarCentrosCusto();
+    this.carregarUnidades();
+  }
+
+  carregarColaboradores() {
+    this.colaboradoresService.listar(1, 2000).subscribe({
+      next: (res) => {
+        const list = res.items || [];
+        this.colaboradoresList.set(list.sort((a, b) => a.nome.localeCompare(b.nome)));
+      }
+    });
+  }
+
+  carregarCentrosCusto() {
+    this.centrosCustoService.listar(1, 200).subscribe({
+      next: (res) => {
+        const list = res.items || [];
+        this.centrosCustoList.set(list.sort((a, b) => a.codigo - b.codigo));
+      }
+    });
+  }
+
+  carregarUnidades() {
+    this.unidadesService.listar(1, 200).subscribe({
+      next: (res) => {
+        const list = res.items || [];
+        this.unidadesList.set(list.sort((a, b) => a.descricao.localeCompare(b.descricao)));
+      }
+    });
+  }
 
   cards = signal<HealthPlanCard[]>([
     {
@@ -143,6 +207,60 @@ export class PlanoSaudeComponent {
   processFile() {
     if (!this.selectedFile() || !this.activeCard()) return;
 
+    this.processingError.set('');
+
+    if (this.activeCard()?.id === 'sorriso') {
+      this.isProcessing.set(true);
+      this.processingStep.set(1);
+      this.processingText.set('Enviando arquivo e extraindo dados pelo Gemini...');
+
+      this.importacoesService.analisarSorriso(this.selectedFile()!).subscribe({
+        next: (res) => {
+          if (res.sucesso) {
+            this.parsedTitulares.set(res.dados);
+            this.totalGeral.set(res.total_geral);
+            this.validacoes.set(res.validacoes);
+            this.validacoesSucesso.set(res.validacoes_sucesso);
+            this.processingStep.set(5);
+            this.isProcessing.set(false);
+          } else {
+            this.processingError.set('Erro ao analisar arquivo.');
+            this.isProcessing.set(false);
+          }
+        },
+        error: (err) => {
+          this.processingError.set(err.error?.detail || 'Erro ao comunicar com o servidor.');
+          this.isProcessing.set(false);
+        }
+      });
+      return;
+    } else if (this.activeCard()?.id === 'unimed-odonto') {
+      this.isProcessing.set(true);
+      this.processingStep.set(1);
+      this.processingText.set('Enviando arquivo e extraindo dados pelo Gemini...');
+
+      this.importacoesService.analisarUnimedOdonto(this.selectedFile()!).subscribe({
+        next: (res) => {
+          if (res.sucesso) {
+            this.parsedTitulares.set(res.dados);
+            this.totalGeral.set(res.total_geral);
+            this.validacoes.set(res.validacoes);
+            this.validacoesSucesso.set(res.validacoes_sucesso);
+            this.processingStep.set(5);
+            this.isProcessing.set(false);
+          } else {
+            this.processingError.set('Erro ao analisar arquivo.');
+            this.isProcessing.set(false);
+          }
+        },
+        error: (err) => {
+          this.processingError.set(err.error?.detail || 'Erro ao comunicar com o servidor.');
+          this.isProcessing.set(false);
+        }
+      });
+      return;
+    }
+
     this.isProcessing.set(true);
     this.processingStep.set(1);
     this.processingText.set('Lendo e validando a estrutura do arquivo...');
@@ -170,10 +288,152 @@ export class PlanoSaudeComponent {
     }, 1500);
   }
 
+  confirmAndSave() {
+    if (!this.selectedFile() || this.parsedTitulares().length === 0) return;
+
+    this.isSaving.set(true);
+    this.processingError.set('');
+
+    if (this.activeCard()?.id === 'sorriso') {
+      this.importacoesService.confirmarSorriso(this.selectedFile()!.name, this.parsedTitulares()).subscribe({
+        next: (res) => {
+          this.isSaving.set(false);
+          if (res.sucesso) {
+            this.importedCount.set(res.movimentacoes_criadas);
+            this.divergencesCount.set(res.erros_colaboradores ? res.erros_colaboradores.length : 0);
+            this.processingStep.set(4);
+          } else {
+            this.processingError.set('Erro ao salvar os dados.');
+          }
+        },
+        error: (err) => {
+          this.isSaving.set(false);
+          this.processingError.set(err.error?.detail || 'Erro ao salvar os dados no banco.');
+        }
+      });
+    } else if (this.activeCard()?.id === 'unimed-odonto') {
+      this.importacoesService.confirmarUnimedOdonto(this.selectedFile()!.name, this.parsedTitulares()).subscribe({
+        next: (res) => {
+          this.isSaving.set(false);
+          if (res.sucesso) {
+            this.importedCount.set(res.movimentacoes_criadas);
+            this.divergencesCount.set(res.erros_colaboradores ? res.erros_colaboradores.length : 0);
+            this.processingStep.set(4);
+          } else {
+            this.processingError.set('Erro ao salvar os dados.');
+          }
+        },
+        error: (err) => {
+          this.isSaving.set(false);
+          this.processingError.set(err.error?.detail || 'Erro ao salvar os dados no banco.');
+        }
+      });
+    }
+  }
+
   closeModal() {
     this.isUploadModalOpen.set(false);
     this.activeCard.set(null);
     this.selectedFile.set(null);
     this.processingStep.set(0);
+    this.editingRowIndex.set(null);
+  }
+
+  onColaboradorSelected(colabNome: string) {
+    const colab = this.colaboradoresList().find(c => c.nome === colabNome);
+    if (colab) {
+      if (colab.centro_custo) {
+        this.editCentroCusto.set(colab.centro_custo.codigo.toString());
+      }
+      if (colab.unidade) {
+        this.editUnidade.set(colab.unidade.codigo.toString());
+      }
+    }
+  }
+
+  // Inline editing methods
+  onEditNomeChange(event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    this.editNome.set(val);
+  }
+
+  onEditCCChange(event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    this.editCentroCusto.set(val);
+  }
+
+  onEditValorChange(event: Event) {
+    const val = parseFloat((event.target as HTMLInputElement).value) || 0;
+    this.editValor.set(val);
+  }
+
+  startEdit(index: number, titular: any) {
+    this.editingRowIndex.set(index);
+    this.editNome.set(titular.nome_db || titular.nome_pdf);
+    this.editCentroCusto.set(titular.centro_custo || 'N/D');
+    this.editUnidade.set(titular.unidade || 'N/D');
+    this.editValor.set(titular.valor_total);
+  }
+
+  saveEdit(index: number) {
+    const updatedList = [...this.parsedTitulares()];
+    const item = { ...updatedList[index] };
+    
+    item.nome_db = this.editNome();
+    item.centro_custo = this.editCentroCusto()?.toString() || 'N/D';
+    item.unidade = this.editUnidade() || 'N/D';
+    item.valor_total = this.editValor();
+    
+    updatedList[index] = item;
+    this.parsedTitulares.set(updatedList);
+    this.editingRowIndex.set(null);
+    this.recalculateTotalGeral();
+  }
+
+  cancelEdit() {
+    this.editingRowIndex.set(null);
+  }
+
+  recalculateTotalGeral() {
+    const sum = this.parsedTitulares().reduce((acc, curr) => acc + (curr.valor_total || 0), 0);
+    this.totalGeral.set(sum);
+  }
+
+  exportToExcel() {
+    if (this.parsedTitulares().length === 0) return;
+
+    if (this.activeCard()?.id === 'sorriso') {
+      this.importacoesService.exportarSorrisoExcel(this.parsedTitulares()).subscribe({
+        next: (blob) => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'planilha_consolidada_sorriso.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        },
+        error: (err) => {
+          this.processingError.set('Erro ao exportar planilha Excel.');
+        }
+      });
+    } else if (this.activeCard()?.id === 'unimed-odonto') {
+      this.importacoesService.exportarUnimedOdontoExcel(this.parsedTitulares()).subscribe({
+        next: (blob) => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'planilha_consolidada_unimed_odonto.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        },
+        error: (err) => {
+          this.processingError.set('Erro ao exportar planilha Excel.');
+        }
+      });
+    }
   }
 }

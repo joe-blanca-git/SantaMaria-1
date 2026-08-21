@@ -9,6 +9,9 @@
 // Importa ngx-daterangepicker-material base css (removido)
 @import "flatpickr/dist/flatpickr.min.css";
 
+// 1. Design Tokens de Tema
+@import 'styles/tokens';
+
 // 1. Variáveis customizadas (overrides do Bootstrap)
 @import 'styles/variables';
 
@@ -17,3 +20,6 @@
 
 // 3. Nossas customizações globais
 @import 'styles/global';
+
+// 4. Overrides do sistema de tema Light/Dark
+@import 'styles/theme_overrides';

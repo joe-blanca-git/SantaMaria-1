@@ -1,0 +1,412 @@
+<div class="conciliacao-layout-container">
+  
+  <!-- Left Column: Module Sidebar Navigation -->
+  <aside class="conciliacao-sidebar">
+    <div class="logo-area">
+      <img src="images/logo.jpg" class="logo-img" alt="Logo Santa Maria">
+      <div class="logo-text">
+        <span class="company-name">Santa Maria</span>
+        <span class="module-title">Conciliação</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <!-- Section: Análises -->
+      <div class="menu-section">
+        <div class="section-title">Análises</div>
+        @for (menu of analisesMenus(); track menu.id) {
+          <button 
+            class="nav-item" 
+            [class.active]="activeMenu() === menu.id"
+            (click)="selectMenu(menu.id)">
+            <i [class]="menu.icon"></i>
+            <span>{{ menu.label }}</span>
+          </button>
+        }
+      </div>
+
+      <!-- Section: Processamento -->
+      <div class="menu-section">
+        <div class="section-title">Processamento</div>
+        @for (menu of administracaoMenus(); track menu.id) {
+          <button 
+            class="nav-item" 
+            [class.active]="activeMenu() === menu.id"
+            (click)="selectMenu(menu.id)">
+            <i [class]="menu.icon"></i>
+            <span>{{ menu.label }}</span>
+          </button>
+        }
+      </div>
+    </nav>
+  </aside>
+
+  <!-- Right Column: Panel Content Area -->
+  <main class="content-area">
+    
+    <!-- PANEL: DASHBOARD -->
+    @if (activeMenu() === 'dashboard') {
+      <div class="panel-container">
+        <header class="panel-header">
+          <h2>Dashboard de Conciliação</h2>
+          <span class="panel-description">Visão consolidada de correspondência de pagamentos, taxas de conciliação e pendências.</span>
+        </header>
+
+        <!-- KPI Cards Grid -->
+        <div class="kpis-grid mb-4">
+          <app-card [padding]="true" class="kpi-card">
+            <div class="kpi-content">
+              <span class="kpi-title">Taxa de Conciliação</span>
+              <span class="kpi-value text-success">98.2%</span>
+              <span class="kpi-sub">Este mês</span>
+            </div>
+            <div class="kpi-icon text-success">
+              <i class="fa-solid fa-circle-check"></i>
+            </div>
+          </app-card>
+
+          <app-card [padding]="true" class="kpi-card">
+            <div class="kpi-content">
+              <span class="kpi-title">Títulos Conciliados</span>
+              <span class="kpi-value text-primary">455</span>
+              <span class="kpi-sub">Últimos 30 dias</span>
+            </div>
+            <div class="kpi-icon text-primary">
+              <i class="fa-solid fa-receipt"></i>
+            </div>
+          </app-card>
+
+          <app-card [padding]="true" class="kpi-card">
+            <div class="kpi-content">
+              <span class="kpi-title">Divergências</span>
+              <span class="kpi-value text-warning">3</span>
+              <span class="kpi-sub">Aguardando revisão</span>
+            </div>
+            <div class="kpi-icon text-warning">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+          </app-card>
+        </div>
+        
+        <div class="dashboard-placeholder">
+          <div class="placeholder-icon">
+            <i class="fa-solid fa-chart-pie"></i>
+          </div>
+          <h3>Gráficos e Indicadores</h3>
+          <p>Esta area exibirá a evolução temporal das taxas de liquidação e gráficos de conciliação por banco.</p>
+        </div>
+      </div>
+    }
+
+    <!-- PANEL: EXTRATOS -->
+    @else if (activeMenu() === 'extratos') {
+      <div class="panel-container">
+        <header class="panel-header">
+          <h2>Extratos Bancários</h2>
+          <span class="panel-description">Histórico de arquivos de extrato importados e saldos consolidados por conta.</span>
+        </header>
+        
+        <div class="dashboard-placeholder">
+          <div class="placeholder-icon">
+            <i class="fa-solid fa-money-check-dollar"></i>
+          </div>
+          <h3>Gerenciamento de Extratos</h3>
+          <p>Visualize os arquivos OFX importados, saldos iniciais/finais e extrato de movimentações conciliadas.</p>
+        </div>
+      </div>
+    }
+
+    <!-- PANEL: RELATORIOS -->
+    @else if (activeMenu() === 'relatorios') {
+      <div class="panel-container">
+        <header class="panel-header">
+          <h2>Relatórios de Fechamento</h2>
+          <span class="panel-description">Relatórios de conciliação mensal, sobras de caixa e inconsistências financeiras.</span>
+        </header>
+        
+        <div class="dashboard-placeholder">
+          <div class="placeholder-icon">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+          </div>
+          <h3>Relatórios Consolidados</h3>
+          <p>Exporte relatórios em PDF ou Excel para auditorias de fechamento mensal e conciliação contábil.</p>
+        </div>
+      </div>
+    }
+
+    <!-- PANEL: CONCILIAR (Executar Conciliação) -->
+    @else if (activeMenu() === 'conciliar') {
+      <div class="panel-container animate-fade-in">
+        <header class="panel-header">
+          <h2>Executar Conciliação de Pagamentos</h2>
+          <span class="panel-description">Importe os títulos para pagamento do sistema (APB) e os extratos ou faturas do banco (PDF/Excel).</span>
+        </header>
+        
+        <!-- Upload Box Card -->
+        <app-card [padding]="true" class="import-card-premium">
+          <div class="import-card-header">
+            <div class="import-card-icon">
+              <i class="fa-solid fa-scale-balanced"></i>
+            </div>
+            <div class="import-card-meta">
+              <h3>Conciliador Financeiro</h3>
+              <p>Carregue os arquivos correspondentes para realizar a conciliação e conferência automática.</p>
+            </div>
+          </div>
+
+          <div class="upload-fields-row mb-4">
+            <!-- APB Upload Button -->
+            <div class="upload-field-box">
+              <label class="form-label">1. Planilha APB - Contas a Pagar (Único Excel)</label>
+              <div class="custom-upload-zone" (click)="triggerUpload('apb')" [class.has-file]="selectedFileApb() !== null">
+                <i class="fa-regular fa-file-excel fs-1 text-success"></i>
+                <div class="upload-text">
+                  @if (selectedFileApb()) {
+                    <span class="file-selected-name text-success">{{ selectedFileApb()?.name }}</span>
+                  } @else {
+                    <span>Carregar Planilha APB</span>
+                  }
+                </div>
+              </div>
+            </div>
+
+            <!-- Bank Upload Button (Multiple Files) -->
+            <div class="upload-field-box">
+              <label class="form-label">2. Movimentações do Banco (Múltiplos PDF/Excel/OFX)</label>
+              <div class="custom-upload-zone" (click)="triggerUpload('banco')" [class.has-file]="selectedFilesBanco().length > 0">
+                <i class="fa-solid fa-folder-open fs-1 text-primary"></i>
+                <div class="upload-text">
+                  <span>Carregar Arquivos do Banco</span>
+                </div>
+              </div>
+
+              <!-- List of Selected Bank Files -->
+              @if (selectedFilesBanco().length > 0) {
+                <div class="selected-files-list mt-3">
+                  <div class="list-title">Arquivos Carregados ({{ selectedFilesBanco().length }}):</div>
+                  @for (file of selectedFilesBanco(); track $index) {
+                    <div class="file-tag">
+                      <i class="fa-regular" [class.fa-file-pdf]="file.name.endsWith('.pdf')" [class.fa-file-excel]="file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')" [class.fa-file-code]="file.name.endsWith('.ofx')"></i>
+                      <span class="file-name" [title]="file.name">{{ file.name }}</span>
+                      <button class="remove-btn" (click)="removeBancoFile($index); $event.stopPropagation();">
+                        <i class="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+
+          <div class="import-actions-row">
+            <app-button 
+              variant="primary" 
+              icon="fa-solid fa-circle-check" 
+              [disabled]="!selectedFileApb() || selectedFilesBanco().length === 0"
+              (clicked)="processarCruzamento()">
+              Conciliar Arquivos
+            </app-button>
+          </div>
+        </app-card>
+
+        <!-- Conciliacoes History Table (SaaS Style) -->
+        <div class="history-section mt-5">
+          <h3 class="section-title-premium">Últimas Conciliações Realizadas</h3>
+          
+          <div class="table-container mt-3">
+            <table class="saas-table">
+              <thead>
+                <tr>
+                  <th style="width: 15%;" class="text-center">Data/Hora</th>
+                  <th style="width: 30%;">Arquivo de Origem</th>
+                  <th style="width: 15%; text-align: right;">Conciliados</th>
+                  <th style="width: 15%; text-align: right;">Não Encontrados</th>
+                  <th style="width: 10%; text-align: right;">Divergentes</th>
+                  <th style="width: 10%; text-align: center;">Status</th>
+                  <th style="width: 15%;">Operador</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (history of conciliacaoHistory(); track history.date) {
+                  <tr>
+                    <td class="text-center font-monospace small">{{ history.date }}</td>
+                    <td>
+                      <span class="file-name-cell">
+                        <i class="fa-solid fa-file-invoice text-primary me-2"></i>
+                        {{ history.fileName }}
+                      </span>
+                    </td>
+                    <td class="text-end font-tabular-nums text-success">{{ history.matchedCount }}</td>
+                    <td class="text-end font-tabular-nums text-muted">{{ history.unmatchedCount }}</td>
+                    <td class="text-end font-tabular-nums text-warning">{{ history.divergencesCount }}</td>
+                    <td class="text-center">
+                      @if (history.status === 'success') {
+                        <app-badge variant="success" text="Concluído"></app-badge>
+                      } @else if (history.status === 'warning') {
+                        <app-badge variant="warning" text="Atenção"></app-badge>
+                      } @else {
+                        <app-badge variant="danger" text="Falhou"></app-badge>
+                      }
+                    </td>
+                    <td class="text-muted small">{{ history.user }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    }
+  </main>
+
+  <!-- Hidden File Inputs -->
+  <input type="file" #apbFileInput style="display: none;" accept=".xlsx, .xls" (change)="onFileSelected($event, 'apb')">
+  <input type="file" #bancoFileInput style="display: none;" multiple accept=".xlsx, .xls, .pdf, .ofx, .csv" (change)="onFileSelected($event, 'banco')">
+
+  <!-- Processing / Loading Modal -->
+  <app-modal 
+    [isOpen]="isProcessing()" 
+    title="Cruzamento de Arquivos" 
+    size="sm">
+    
+    <div class="text-center py-3">
+      <div class="processing-spinner mb-3">
+        <app-loading type="spinner" size="lg"></app-loading>
+      </div>
+      <h4 class="mb-2">Conciliando lançamentos...</h4>
+      <div class="progress-steps-list text-start mx-auto mt-4 px-3" style="max-width: 320px;">
+        <div class="step-item" [class.active]="processingStep() === 1" [class.done]="processingStep() > 1">
+          <i class="fa-solid" [class.fa-spinner]="processingStep() === 1" [class.fa-circle-notch]="processingStep() === 1" [class.fa-spin]="processingStep() === 1" [class.fa-check]="processingStep() > 1"></i>
+          <span>Carregamento e leitura dos arquivos</span>
+        </div>
+        <div class="step-item" [class.active]="processingStep() === 2" [class.done]="processingStep() > 2">
+          <i class="fa-solid" [class.fa-spinner]="processingStep() === 2" [class.fa-circle-notch]="processingStep() === 2" [class.fa-spin]="processingStep() === 2" [class.fa-check]="processingStep() > 2" [class.fa-circle]="processingStep() < 2"></i>
+          <span>Processamento Inteligente (Extração de PDF via IA)</span>
+        </div>
+        <div class="step-item" [class.active]="processingStep() === 3" [class.done]="processingStep() > 3">
+          <i class="fa-solid" [class.fa-spinner]="processingStep() === 3" [class.fa-circle-notch]="processingStep() === 3" [class.fa-spin]="processingStep() === 3" [class.fa-check]="processingStep() > 3" [class.fa-circle]="processingStep() < 3"></i>
+          <span>Algoritmo de cruzamento e correspondência</span>
+        </div>
+      </div>
+      <p class="text-muted small mt-4 px-3 italic text-center">
+        {{ processingText() }}
+      </p>
+    </div>
+  </app-modal>
+
+  <!-- Verification Modal (Modal de Conferência) -->
+  <app-modal 
+    [isOpen]="isConferenciaModalOpen()" 
+    title="Conferência da Conciliação de Pagamentos" 
+    size="lg">
+    
+    <div class="conferencia-modal-content">
+      <p class="text-muted small mb-4">
+        Revise abaixo a correspondência automática de valores, títulos e datas. Você pode realizar alterações manuais e ajustar o status das transações antes de salvar e exportar para o Excel.
+      </p>
+
+      <div class="conferencia-table-container">
+        <table class="saas-table conferencia-table">
+          <thead>
+            <tr>
+              <th colspan="3" class="header-group text-center bg-light">Lançamento Banco</th>
+              <th class="header-spacer bg-light"></th>
+              <th colspan="4" class="header-group text-center bg-light-blue">Título Correspondente (APB)</th>
+              <th class="header-status text-center">Status</th>
+            </tr>
+            <tr>
+              <th style="width: 10%;">Data</th>
+              <th style="width: 20%;">Descrição</th>
+              <th style="width: 12%; text-align: right;">Valor</th>
+              <th style="width: 2%;" class="text-center"></th>
+              <th style="width: 10%;">Data Venc.</th>
+              <th style="width: 18%;">Fornecedor</th>
+              <th style="width: 10%;">Nº Doc.</th>
+              <th style="width: 12%; text-align: right;">Valor</th>
+              <th style="width: 6%; text-align: center;">Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of conferenciaItems(); track $index) {
+              <tr [class.row-unmatched]="item.status === 'nao_encontrado'" [class.row-divergent]="item.status === 'divergente'">
+                <!-- BANCO -->
+                <td class="font-monospace small">{{ item.banco_data || '-' }}</td>
+                <td class="text-truncate" style="max-width: 160px;" [title]="item.banco_descricao">
+                  <div>{{ item.banco_descricao || '-' }}</div>
+                  @if (item.situacao) {
+                    <div class="mt-1" style="display: inline-block;">
+                      <app-badge [variant]="item.situacao === 'BB-PIX' ? 'success' : 'primary'" [text]="item.situacao"></app-badge>
+                    </div>
+                  }
+                </td>
+                <td class="text-end font-tabular-nums">
+                  @if (item.banco_valor > 0) {
+                    R$ {{ item.banco_valor | number:'1.2-2' }}
+                  } @else {
+                    -
+                  }
+                </td>
+                
+                <!-- SPACER ARROW -->
+                <td class="text-center text-muted">
+                  <i class="fa-solid fa-arrow-right-arrow-left"></i>
+                </td>
+
+                <!-- APB (Editable inputs) -->
+                <td>
+                  <input type="text" class="table-input" [value]="item.apb_data" (input)="updateConferenciaItem($index, 'apb_data', $event)">
+                </td>
+                <td>
+                  <input type="text" class="table-input" [value]="item.apb_fornecedor" (input)="updateConferenciaItem($index, 'apb_fornecedor', $event)">
+                  <div class="row-subtext text-muted" style="font-size: 10px; margin-top: 2px; line-height: 1;">
+                    @if (item.cnpj_cpf) {
+                      <span>Doc: {{ item.cnpj_cpf }}</span>
+                    }
+                    @if (item.cnpj_cpf && item.dados_bancarios) {
+                      <span> | </span>
+                    }
+                    @if (item.dados_bancarios) {
+                      <span>Conta: {{ item.dados_bancarios }}</span>
+                    }
+                  </div>
+                </td>
+                <td>
+                  <input type="text" class="table-input" [value]="item.apb_documento" (input)="updateConferenciaItem($index, 'apb_documento', $event)">
+                </td>
+                <td class="text-end font-tabular-nums">
+                  <div class="input-currency-wrapper">
+                    <span>R$</span>
+                    <input type="number" class="table-input text-end" style="width: 75px;" [value]="item.apb_valor" (input)="updateConferenciaItem($index, 'apb_valor', $event)">
+                  </div>
+                </td>
+
+                <!-- STATUS & ACTION -->
+                <td class="text-center">
+                  <div class="d-flex align-items-center justify-content-center gap-1">
+                    @if (item.status === 'conciliado') {
+                      <app-badge variant="success" text="Ok" (click)="changeStatus($index, 'divergente')" style="cursor: pointer;" title="Clique para alterar status"></app-badge>
+                    } @else if (item.status === 'divergente') {
+                      <app-badge variant="warning" text="Div." (click)="changeStatus($index, 'nao_encontrado')" style="cursor: pointer;" title="Clique para alterar status"></app-badge>
+                    } @else {
+                      <app-badge variant="danger" text="Pendente" (click)="changeStatus($index, 'conciliado')" style="cursor: pointer;" title="Clique para alterar status"></app-badge>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="modal-actions-row mt-4 d-flex justify-content-end gap-2">
+        <app-button variant="secondary" [disabled]="isExporting()" (clicked)="cancelarConferencia()">
+          Cancelar
+        </app-button>
+        <app-button variant="primary" icon="fa-solid fa-file-excel" [loading]="isExporting()" (clicked)="confirmarEExportar()">
+          Salvar e Exportar Excel
+        </app-button>
+      </div>
+    </div>
+  </app-modal>
+
+</div>
