@@ -392,6 +392,7 @@ class DashboardService:
         # Buscar todos os dados base para agregações em memória
         # Essa abordagem é consistente com o resto do arquivo e evita problemas de dialeto SQL
         q_base = self.db.query(
+            Movimentacao.idMovimentacoes,
             Movimentacao.createdAt,
             Movimentacao.valor,
             Categoria.nome.label('categoria_nome'),
@@ -422,11 +423,15 @@ class DashboardService:
         butterfly_marketing = {}
         colaboradores_totais = {}
         colab_matrix_map = {}
+        colab_cc_map = {}
         
         detalhes = []
         all_months_keys = set()
+        seen_movs = set()
+        detalhes_idx = 0
         
-        for idx, row in enumerate(all_movs):
+        for row in all_movs:
+            mov_id = row.idMovimentacoes
             date_val = row.createdAt
             val = float(row.valor)
             cat_name = row.categoria_nome
@@ -436,55 +441,63 @@ class DashboardService:
             colab_nome = row.colaborador_nome
             papel = (row.papel or "").strip().upper()
             
-            # Detalhes (limitar a 200 itens para não pesar o frontend)
-            if idx < 200:
-                detalhes.append({
-                    "data": date_val.strftime("%d/%m/%Y"),
-                    "categoria": cat_name,
-                    "centroCustoNome": cc_nome,
-                    "colaboradorNome": colab_nome,
-                    "estado": estado,
-                    "valor": val,
-                    "empresa": row.empresa_nome
-                })
+            # Só agrega e adiciona a detalhes se for a primeira vez que vemos essa movimentação
+            if mov_id not in seen_movs:
+                seen_movs.add(mov_id)
                 
-            # Mês/Ano para Barras Verticais e Evolução
-            month_key = f"{date_val.year}-{date_val.month:02d}"
-            all_months_keys.add(month_key)
-            
-            meses_totais[month_key] = meses_totais.get(month_key, 0) + val
-            
-            # Categoria Barras e Donut
-            if cat_name not in categorias_totais:
-                categorias_totais[cat_name] = {"id": cat_id, "valor": 0}
-            categorias_totais[cat_name]["valor"] += val
-            
-            # Evolução por Centro de Custo e Total por Centro de Custo
-            cc_display = cc_nome or "Sem Centro de Custo"
-            centro_custo_totais[cc_display] = centro_custo_totais.get(cc_display, 0) + val
-            
-            if cc_display not in centro_custo_mensal:
-                centro_custo_mensal[cc_display] = {}
-            centro_custo_mensal[cc_display][month_key] = centro_custo_mensal[cc_display].get(month_key, 0) + val
-            
-            # Mapa
-            estado_clean = clean_state_name(estado)
-            if estado_clean not in estados_totais:
-                estados_totais[estado_clean] = {"value": 0.0, "qtd": 0}
-            estados_totais[estado_clean]["value"] += val
-            estados_totais[estado_clean]["qtd"] += 1
-            
-            # Butterfly (Comercial vs Marketing)
-            if 'COMERCIAL' in papel:
-                butterfly_comercial[cat_name] = butterfly_comercial.get(cat_name, 0) + val
-            elif 'MARKETING' in papel:
-                butterfly_marketing[cat_name] = butterfly_marketing.get(cat_name, 0) + val
+                # Detalhes (limitar a 200 itens únicos para não pesar o frontend)
+                if detalhes_idx < 200:
+                    detalhes.append({
+                        "data": date_val.strftime("%d/%m/%Y"),
+                        "categoria": cat_name,
+                        "centroCustoNome": cc_nome,
+                        "colaboradorNome": colab_nome,
+                        "estado": estado,
+                        "valor": val,
+                        "empresa": row.empresa_nome
+                    })
+                    detalhes_idx += 1
+                    
+                # Mês/Ano para Barras Verticais e Evolução
+                month_key = f"{date_val.year}-{date_val.month:02d}"
+                all_months_keys.add(month_key)
                 
-            # Ranking Colaboradores e Matriz
-            colaboradores_totais[colab_nome] = colaboradores_totais.get(colab_nome, 0) + val
-            if colab_nome not in colab_matrix_map:
-                colab_matrix_map[colab_nome] = {}
-            colab_matrix_map[colab_nome][cat_name] = colab_matrix_map[colab_nome].get(cat_name, 0) + val
+                meses_totais[month_key] = meses_totais.get(month_key, 0) + val
+                
+                # Categoria Barras e Donut
+                if cat_name not in categorias_totais:
+                    categorias_totais[cat_name] = {"id": cat_id, "valor": 0}
+                categorias_totais[cat_name]["valor"] += val
+                
+                # Evolução por Centro de Custo e Total por Centro de Custo
+                cc_display = cc_nome or "Sem Centro de Custo"
+                centro_custo_totais[cc_display] = centro_custo_totais.get(cc_display, 0) + val
+                
+                if cc_display not in centro_custo_mensal:
+                    centro_custo_mensal[cc_display] = {}
+                centro_custo_mensal[cc_display][month_key] = centro_custo_mensal[cc_display].get(month_key, 0) + val
+                
+                # Mapa (somente na primeira região que a movimentação for vinculada, para manter consistência)
+                estado_clean = clean_state_name(estado)
+                if estado_clean not in estados_totais:
+                    estados_totais[estado_clean] = {"value": 0.0, "qtd": 0}
+                estados_totais[estado_clean]["value"] += val
+                estados_totais[estado_clean]["qtd"] += 1
+                
+                # Butterfly (Comercial vs Marketing)
+                if 'COMERCIAL' in papel:
+                    butterfly_comercial[cat_name] = butterfly_comercial.get(cat_name, 0) + val
+                elif 'MARKETING' in papel:
+                    butterfly_marketing[cat_name] = butterfly_marketing.get(cat_name, 0) + val
+                    
+                # Ranking Colaboradores e Matriz
+                colaboradores_totais[colab_nome] = colaboradores_totais.get(colab_nome, 0) + val
+                colab_cc_map[colab_nome] = row.centro_custo_codigo
+                
+                matrix_key = (colab_nome, row.empresa_nome)
+                if matrix_key not in colab_matrix_map:
+                    colab_matrix_map[matrix_key] = {}
+                colab_matrix_map[matrix_key][cat_name] = colab_matrix_map[matrix_key].get(cat_name, 0) + val
 
         # --- Formatação dos Resultados ---
         
@@ -540,14 +553,16 @@ class DashboardService:
         detalhes_totais_categoria = {k: round(v["valor"], 2) for k, v in categorias_totais.items()}
         
         matriz = []
-        for colab, cat_vals in colab_matrix_map.items():
+        for (colab, emp), cat_vals in colab_matrix_map.items():
             row_total = sum(cat_vals.values())
             matriz.append({
                 "colaboradorNome": colab,
+                "empresaNome": emp,
+                "centroCustoCodigo": colab_cc_map.get(colab, ""),
                 "valoresPorCategoria": {k: round(v, 2) for k, v in cat_vals.items()},
                 "total": round(row_total, 2)
             })
-        matriz.sort(key=lambda x: x["colaboradorNome"])
+        matriz.sort(key=lambda x: (x["colaboradorNome"], x["empresaNome"]))
         
         return {
             "analiticoTotalDespesas": round(total_despesas, 2),

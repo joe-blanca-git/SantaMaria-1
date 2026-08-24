@@ -10,6 +10,7 @@ export interface Empresa {
   createdAt?: string;
   updatedAte?: string;
   icon?: string; // Propriedade extra para o front-end
+  modulo_id?: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -28,10 +29,13 @@ export class EmpresasService {
 
   constructor(private http: HttpClient) {}
 
-  listar(page = 1, pageSize = 100, search: string = ''): Observable<PaginatedResponse<Empresa>> {
+  listar(page = 1, pageSize = 100, search: string = '', modulo?: number): Observable<PaginatedResponse<Empresa>> {
     let url = `${this.apiUrl}?page=${page}&page_size=${pageSize}`;
     if (search) {
       url += `&q=${encodeURIComponent(search)}`;
+    }
+    if (modulo) {
+      url += `&modulo=${modulo}`;
     }
     return this.http.get<PaginatedResponse<Empresa>>(url);
   }

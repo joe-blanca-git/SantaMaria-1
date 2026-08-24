@@ -18,6 +18,7 @@ export class ConfirmModalComponent {
   @Input() cancelText = 'Cancelar';
   @Input() variant: 'danger' | 'primary' = 'danger';
   @Input() isLoading = false;
+  @Input() showCancel = true;
 
   @Output() confirmed = new EventEmitter<void>();
   @Output() canceled = new EventEmitter<void>();

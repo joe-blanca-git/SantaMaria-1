@@ -16,9 +16,10 @@ def list_empresas(
     page: int = 1,
     page_size: int = 20,
     q: Optional[str] = None,
+    modulo: Optional[int] = None,
     service: EmpresaService = Depends(get_service)
 ):
-    return service.get_empresas(page=page, page_size=page_size, search=q)
+    return service.get_empresas(page=page, page_size=page_size, search=q, modulo=modulo)
 
 @router.post("", response_model=EmpresaResponse, status_code=status.HTTP_201_CREATED)
 def create_empresa(

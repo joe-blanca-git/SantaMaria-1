@@ -8,6 +8,7 @@ class EmpresaBase(BaseModel):
 
 class EmpresaCreate(EmpresaBase):
     nome: str = Field(..., max_length=80)
+    modulo_id: Optional[int] = None
 
 class EmpresaUpdate(EmpresaBase):
     pass

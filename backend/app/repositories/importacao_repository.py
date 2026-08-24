@@ -7,9 +7,12 @@ class ImportacaoRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self, page: int = 1, size: int = 10, search: str = None) -> Tuple[List[Importacao], int]:
+    def get_all(self, page: int = 1, size: int = 10, search: str = None, categoria: str = None) -> Tuple[List[Importacao], int]:
         query = self.db.query(Importacao)
         
+        if categoria:
+            query = query.filter(Importacao.tipo.ilike(f"{categoria}%"))
+            
         if search:
             query = query.filter(
                 or_(

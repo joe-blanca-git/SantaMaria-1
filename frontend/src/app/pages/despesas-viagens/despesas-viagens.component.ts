@@ -24,6 +24,7 @@ import { EmpresasService, Empresa } from '../../core/services/empresas.service';
 import { ViewChild, ElementRef, HostListener } from '@angular/core';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 import { FlatpickrModule } from 'angularx-flatpickr';
 import { Portuguese } from 'flatpickr/dist/l10n/pt.js';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
@@ -40,7 +41,7 @@ export class DespesasViagensComponent implements OnInit {
   isDashboardLoading = false;
   activeTab: 'dashboard' | 'atualizacao' | 'configuracoes' = 'dashboard';
   activeConfigTab: 'colaboradores' | 'categorias' | 'centros-custo' | 'unidades' | 'empresas' = 'colaboradores';
-  activeDashboardTab: 'visao-geral' | 'categorias' | 'comercial-marketing' = 'visao-geral';
+  activeDashboardTab: 'visao-geral' | 'categorias' | 'comercial-marketing' | 'relatorio' = 'visao-geral';
 
   isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null
     ? localStorage.getItem('sidebarCollapsed') === 'true'
@@ -153,6 +154,7 @@ export class DespesasViagensComponent implements OnInit {
           this.carregarDetalhesCategoria();
         }
         this.atualizarDadosAnalitico();
+        this.atualizarDadosRelatorio();
       }
     });
   }
@@ -173,6 +175,7 @@ export class DespesasViagensComponent implements OnInit {
     this.carregarUnidadesGeral();
     this.selecionarAtalhoPeriodo('este-ano');
     this.selecionarAtalhoPeriodoAnalitico('este-ano');
+    this.selecionarAtalhoPeriodoRelatorio('este-ano');
   }
 
   carregarDadosDashboard() {
@@ -431,8 +434,11 @@ export class DespesasViagensComponent implements OnInit {
     this.activeConfigTab = tab;
   }
 
-  setActiveDashboardTab(tab: 'visao-geral' | 'categorias' | 'comercial-marketing'): void {
+  setActiveDashboardTab(tab: 'visao-geral' | 'categorias' | 'comercial-marketing' | 'relatorio'): void {
     this.activeDashboardTab = tab;
+    if (tab === 'relatorio') {
+      this.atualizarDadosRelatorio();
+    }
   }
 
   // ==========================================
@@ -530,7 +536,7 @@ export class DespesasViagensComponent implements OnInit {
 
   listaEmpresasGeral: any[] = [];
   carregarEmpresasGeral() {
-    this.empresasService.listar(1, 1000).subscribe({
+    this.empresasService.listar(1, 1000, '', 1).subscribe({
       next: (res) => this.listaEmpresasGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
     });
   }
@@ -1046,7 +1052,7 @@ export class DespesasViagensComponent implements OnInit {
   isSalvandoEmpresa = false;
 
   carregarEmpresasConfig() {
-    this.empresasService.listar(this.currentEmpresaConfigPage, this.itemsEmpresaConfigPerPage, this.searchEmpresaConfig).subscribe({
+    this.empresasService.listar(this.currentEmpresaConfigPage, this.itemsEmpresaConfigPerPage, this.searchEmpresaConfig, 1).subscribe({
       next: (res) => {
         this.listaEmpresasConfig = res.items;
         this.totalEmpresasConfig = res.total;
@@ -1145,7 +1151,7 @@ export class DespesasViagensComponent implements OnInit {
   }
 
   carregarEmpresas() {
-    this.empresasService.listar(1, 100).subscribe({
+    this.empresasService.listar(1, 100, '', 1).subscribe({
       next: (res) => {
         this.empresas = res.items.map(e => {
           // Mapeia alguns ícones baseados no nome da empresa por padrão visual
@@ -1427,23 +1433,105 @@ export class DespesasViagensComponent implements OnInit {
 
     try {
       const element = this.dashboardContent.nativeElement;
+      
+      // Obter cor de fundo do tema dinamicamente
+      const computedStyle = getComputedStyle(document.documentElement);
+      const bgCol = computedStyle.getPropertyValue('--color-bg').trim() || '#ffffff';
+
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: bgCol,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+        onclone: (clonedDoc) => {
+          // Remover estilos que quebram o html2canvas (sticky e max-height overflow) apenas no clone!
+          const stickyEls = clonedDoc.querySelectorAll('.sticky-col-left, .sticky-col-right');
+          stickyEls.forEach((el: any) => {
+            el.style.position = 'static';
+          });
+          
+          const scrollEls = clonedDoc.querySelectorAll('.table-responsive');
+          scrollEls.forEach((el: any) => {
+            el.style.maxHeight = 'none';
+            // Em vez de overflow visible (que pode colapsar a div), apenas garantimos height auto
+            el.style.height = 'auto';
+            el.style.overflow = 'hidden'; // Evita scrollbars visíveis no PDF
+          });
+        }
       });
+
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error('A renderização retornou uma imagem vazia ou o elemento está oculto.');
+      }
 
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const pdf = new jsPDF('l', 'mm', 'a4'); // landscape
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeightPage = pdf.internal.pageSize.getHeight();
+
+      pdf.setFillColor(bgCol);
+      pdf.rect(0, 0, pdfWidth, pdfHeightPage, 'F');
 
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save('dashboard-despesas-viagens.pdf');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao gerar PDF:', error);
+      alert('Erro ao gerar PDF: ' + (error?.message || error));
     }
+  }
+
+  exportRelatorioToExcel() {
+    if (!this.relatorioDetalhesMatrizFiltrada || this.relatorioDetalhesMatrizFiltrada.length === 0) {
+      alert('Não há dados para exportar.');
+      return;
+    }
+
+    const header = [
+      'COLABORADOR',
+      'EMPRESA',
+      'CENTRO DE CUSTO',
+      ...this.relatorioDetalhesCategoriasColunas,
+      'TOTAL'
+    ];
+
+    const dataRows = this.relatorioDetalhesMatrizFiltrada.map(row => {
+      const r = [
+        row.colaboradorNome || '-',
+        row.empresaNome || '-',
+        row.centroCustoCodigo || '-'
+      ];
+      this.relatorioDetalhesCategoriasColunas.forEach(cat => {
+        r.push(row.valoresPorCategoria[cat] || 0);
+      });
+      r.push(row.total || 0);
+      return r;
+    });
+
+    const footerRow: any[] = [
+      'TOTAL GERAL',
+      '',
+      ''
+    ];
+    this.relatorioDetalhesCategoriasColunas.forEach(cat => {
+      footerRow.push(this.relatorioDetalhesTotaisPorCategoria[cat] || 0);
+    });
+    footerRow.push(this.relatorioDetalhesTotalGeral || 0);
+
+    const worksheet: XLSX.WorkSheet = XLSX.utils.aoa_to_sheet([header, ...dataRows, footerRow]);
+
+    worksheet['!views'] = [{
+      state: 'frozen',
+      xSplit: 1,
+      ySplit: 1
+    }];
+
+    const workbook: XLSX.WorkBook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Relatório Despesas');
+    
+    XLSX.writeFile(workbook, 'relatorio-despesas-viagens.xlsx');
   }
 
   toggleFullscreen() {
@@ -2038,6 +2126,154 @@ export class DespesasViagensComponent implements OnInit {
       error: (err) => {
         console.error("Erro ao carregar dados analíticos", err);
         this.isAnaliticoLoading = false;
+      }
+    });
+  }
+
+  // ==========================================
+  // ABA RELATÓRIO — GRID E FILTROS
+  // ==========================================
+
+  // Filtros Relatório
+  relatorioDataInicio: Date | null = null;
+  relatorioDataFim: Date | null = null;
+  relatorioPeriodShortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado' | 'personalizado' | null = 'este-ano';
+  relatorioEmpresa: number | null = null;
+  relatorioColaborador: number | null = null;
+  relatorioCentroCusto: string | null = null;
+
+  isRelatorioLoading = false;
+  relatorioDetalhesMatrizOriginal: any[] = [];
+  relatorioDetalhesMatrizFiltrada: any[] = [];
+  relatorioDetalhesCategoriasColunas: string[] = [];
+  relatorioDetalhesTotaisPorCategoria: { [cat: string]: number } = {};
+  relatorioDetalhesTotalGeral = 0;
+  searchRelatorioTerm = '';
+
+  onSearchRelatorioChange(term: string) {
+    this.searchRelatorioTerm = term;
+    this.filtrarRelatorioDetalhesMatriz();
+  }
+
+  filtrarRelatorioDetalhesMatriz() {
+    if (!this.searchRelatorioTerm || !this.searchRelatorioTerm.trim()) {
+      this.relatorioDetalhesMatrizFiltrada = [...this.relatorioDetalhesMatrizOriginal];
+      return;
+    }
+    const term = this.searchRelatorioTerm.toLowerCase().trim();
+    this.relatorioDetalhesMatrizFiltrada = this.relatorioDetalhesMatrizOriginal.filter(item =>
+      item.colaboradorNome.toLowerCase().includes(term) ||
+      (item.empresaNome && item.empresaNome.toLowerCase().includes(term)) ||
+      item.total.toString().includes(term)
+    );
+  }
+
+  onRelatorioDataInicioChange() {
+    if (this.relatorioDataInicio && this.relatorioDataFim && this.relatorioDataInicio > this.relatorioDataFim) {
+      this.relatorioDataFim = this.relatorioDataInicio;
+    }
+    this.relatorioPeriodShortcut = 'personalizado';
+    this.atualizarDadosRelatorio();
+  }
+
+  onRelatorioDataFimChange() {
+    this.relatorioPeriodShortcut = 'personalizado';
+    this.atualizarDadosRelatorio();
+  }
+
+  onRelatorioShortcutSelectChange(val: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado' | 'personalizado') {
+    if (val !== 'personalizado') {
+      this.selecionarAtalhoPeriodoRelatorio(val);
+    }
+  }
+
+  selecionarAtalhoPeriodoRelatorio(shortcut: 'ultimo-bimestre' | 'ultimo-semestre' | 'este-ano' | 'ano-passado') {
+    const today = new Date();
+    const getPastDate = (months: number) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - months);
+      return d;
+    };
+
+    switch (shortcut) {
+      case 'ultimo-bimestre':
+        this.relatorioDataInicio = getPastDate(2);
+        this.relatorioDataFim = today;
+        break;
+      case 'ultimo-semestre':
+        this.relatorioDataInicio = getPastDate(6);
+        this.relatorioDataFim = today;
+        break;
+      case 'este-ano':
+        this.relatorioDataInicio = new Date(today.getFullYear(), 0, 1);
+        this.relatorioDataFim = new Date(today.getFullYear(), 11, 31);
+        break;
+      case 'ano-passado':
+        this.relatorioDataInicio = new Date(today.getFullYear() - 1, 0, 1);
+        this.relatorioDataFim = new Date(today.getFullYear() - 1, 11, 31);
+        break;
+    }
+    this.relatorioPeriodShortcut = shortcut;
+    this.atualizarDadosRelatorio();
+  }
+
+  atualizarDadosRelatorio() {
+    this.isRelatorioLoading = true;
+    const filtros = {
+      data_inicio: this.relatorioDataInicio ? this.relatorioDataInicio.toISOString().split('T')[0] : null,
+      data_fim: this.relatorioDataFim ? this.relatorioDataFim.toISOString().split('T')[0] : null,
+      id_empresa: this.relatorioEmpresa || null,
+      id_colaborador: this.relatorioColaborador || null,
+      id_categoria: null
+    };
+
+    this.importacoesService.obterDadosDashboardAnalitico(filtros).subscribe({
+      next: (dados) => {
+        this.isRelatorioLoading = false;
+        
+        let matriz = dados.detalhesMatrizOriginal || [];
+        
+        // Filtro local de Centro de Custo na matriz
+        if (this.relatorioCentroCusto) {
+          const colabCCMap = new Map<string, string>();
+          (dados.detalhes || []).forEach((item: any) => {
+            if (item.colaboradorNome && item.centroCustoNome) {
+              colabCCMap.set(item.colaboradorNome, item.centroCustoNome);
+            }
+          });
+          matriz = matriz.filter((row: any) => colabCCMap.get(row.colaboradorNome) === this.relatorioCentroCusto);
+        }
+
+        this.relatorioDetalhesMatrizOriginal = matriz;
+        this.relatorioDetalhesCategoriasColunas = dados.detalhesCategoriasColunas || [];
+        
+        // Recalcular totais se houver filtro local de centro de custo
+        if (this.relatorioCentroCusto) {
+          const totais: { [cat: string]: number } = {};
+          let totalGeral = 0;
+          this.relatorioDetalhesCategoriasColunas.forEach(cat => {
+            totais[cat] = 0;
+          });
+          
+          matriz.forEach((row: any) => {
+            totalGeral += row.total;
+            this.relatorioDetalhesCategoriasColunas.forEach(cat => {
+              totais[cat] += (row.valoresPorCategoria[cat] || 0);
+            });
+          });
+          
+          this.relatorioDetalhesTotaisPorCategoria = totais;
+          this.relatorioDetalhesTotalGeral = totalGeral;
+        } else {
+          this.relatorioDetalhesTotaisPorCategoria = dados.detalhesTotaisPorCategoria || {};
+          this.relatorioDetalhesTotalGeral = dados.detalhesTotalGeral || 0;
+        }
+
+        this.filtrarRelatorioDetalhesMatriz();
+      },
+      error: (err) => {
+        console.error("Erro ao carregar dados do relatório", err);
+        this.isRelatorioLoading = false;
       }
     });
   }

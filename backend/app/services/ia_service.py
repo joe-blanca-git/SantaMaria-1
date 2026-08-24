@@ -681,9 +681,7 @@ class IAService:
             1. O arquivo possui 15 páginas. Você deve ler e processar todo o texto fornecido (PÁGINA 1 a PÁGINA 15). O total geral de usuários é 163 (sendo 69 titulares e 94 dependentes). NÃO pare a extração na primeira página; percorra todas as páginas para extrair todos os 69 titulares.
             2. Identifique todos os titulares (TIPO = T) em todas as páginas do PDF.
             3. Identifique todos os dependentes (TIPO = D) vinculados a cada titular. No PDF, os dependentes são listados logo após o respectivo titular e antes da linha de SUBTOTAL do grupo familiar correspondente.
-            4. Para cada titular encontrado, tente associar o nome do titular com o nome de um colaborador da seguinte lista de colaboradores cadastrados no banco de dados. Encontre o correspondente exato ou o mais próximo:
-            {json.dumps(colaboradores, ensure_ascii=False)}
-            Se não houver correspondente aceitável, coloque o nome literal do PDF no campo "nome_db".
+            4. Extraia o nome literal do titular e do dependente exatamente como consta no PDF. Preencha os campos "nome_pdf" e "nome_db" com esse exato mesmo valor literal extraído, sem tentar corrigir ou deduzir nomes.
             5. Extraia o valor unitário da mensalidade (coluna "VR. MENS.") para o titular (valor_titular) e para cada dependente (valor).
             6. Calcule a soma de mensalidade do titular e de todos os dependentes do seu grupo familiar e preencha em "valor_total".
             

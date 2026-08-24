@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS `stamariabd`.`cargocolaborador` (
   `updatedAte` DATETIME NULL DEFAULT NULL,
   PRIMARY KEY (`idCargoColaborador`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 153
+AUTO_INCREMENT = 154
 DEFAULT CHARACTER SET = utf8mb3;
 
 
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS `stamariabd`.`categorias` (
   `updatedAte` DATETIME NULL DEFAULT NULL,
   PRIMARY KEY (`idCategorias`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 9
+AUTO_INCREMENT = 11
 DEFAULT CHARACTER SET = utf8mb3;
 
 
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS `stamariabd`.`centrocusto` (
   `nome` VARCHAR(85) NOT NULL,
   PRIMARY KEY (`idCentroCusto`, `codigo`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 269
+AUTO_INCREMENT = 274
 DEFAULT CHARACTER SET = utf8mb3;
 
 
@@ -115,7 +115,27 @@ CREATE TABLE IF NOT EXISTS `stamariabd`.`colaboradores` (
     FOREIGN KEY (`idUnidade`)
     REFERENCES `stamariabd`.`unidade` (`idUnidade`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 1073
+AUTO_INCREMENT = 1093
+DEFAULT CHARACTER SET = utf8mb3;
+
+
+-- -----------------------------------------------------
+-- Table `stamariabd`.`colaborador_aliases`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `stamariabd`.`colaborador_aliases` (
+  `idAlias` INT NOT NULL AUTO_INCREMENT,
+  `idColaborador` INT NOT NULL,
+  `nome_divergente` VARCHAR(120) NOT NULL,
+  `createdAt` DATETIME NOT NULL,
+  `updatedAt` DATETIME NULL DEFAULT NULL,
+  PRIMARY KEY (`idAlias`),
+  UNIQUE INDEX `ix_colaborador_aliases_nome_divergente` (`nome_divergente` ASC) VISIBLE,
+  INDEX `idColaborador` (`idColaborador` ASC) VISIBLE,
+  INDEX `ix_colaborador_aliases_idAlias` (`idAlias` ASC) VISIBLE,
+  CONSTRAINT `colaborador_aliases_ibfk_1`
+    FOREIGN KEY (`idColaborador`)
+    REFERENCES `stamariabd`.`colaboradores` (`idColaborador`))
+ENGINE = InnoDB
 DEFAULT CHARACTER SET = utf8mb3;
 
 
@@ -130,7 +150,42 @@ CREATE TABLE IF NOT EXISTS `stamariabd`.`empresas` (
   `updatedAte` DATETIME NULL DEFAULT NULL,
   PRIMARY KEY (`idEmpresas`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 6
+AUTO_INCREMENT = 24
+DEFAULT CHARACTER SET = utf8mb3;
+
+
+-- -----------------------------------------------------
+-- Table `stamariabd`.`modulos`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `stamariabd`.`modulos` (
+  `idmodulos` INT NOT NULL AUTO_INCREMENT,
+  `Descricao` VARCHAR(45) NULL DEFAULT NULL,
+  `createdAt` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAte` DATETIME NULL DEFAULT NULL,
+  PRIMARY KEY (`idmodulos`))
+ENGINE = InnoDB
+AUTO_INCREMENT = 3
+DEFAULT CHARACTER SET = utf8mb3;
+
+
+-- -----------------------------------------------------
+-- Table `stamariabd`.`empresamodulo`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `stamariabd`.`empresamodulo` (
+  `idempresamodulo` INT NOT NULL AUTO_INCREMENT,
+  `idEmpresas` INT NOT NULL,
+  `idModulos` INT NOT NULL,
+  PRIMARY KEY (`idempresamodulo`),
+  INDEX `empresaFk_idx` (`idEmpresas` ASC) VISIBLE,
+  INDEX `modulo_idx` (`idModulos` ASC) VISIBLE,
+  CONSTRAINT `empresaFk`
+    FOREIGN KEY (`idEmpresas`)
+    REFERENCES `stamariabd`.`empresas` (`idEmpresas`),
+  CONSTRAINT `modulo`
+    FOREIGN KEY (`idModulos`)
+    REFERENCES `stamariabd`.`modulos` (`idmodulos`))
+ENGINE = InnoDB
+AUTO_INCREMENT = 22
 DEFAULT CHARACTER SET = utf8mb3;
 
 
@@ -151,7 +206,7 @@ CREATE TABLE IF NOT EXISTS `stamariabd`.`importacoes` (
     FOREIGN KEY (`idEmpresa`)
     REFERENCES `stamariabd`.`empresas` (`idEmpresas`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 15
+AUTO_INCREMENT = 112
 DEFAULT CHARACTER SET = utf8mb3;
 
 
@@ -186,7 +241,7 @@ CREATE TABLE IF NOT EXISTS `stamariabd`.`movimentacoes` (
     REFERENCES `stamariabd`.`importacoes` (`idImportacoes`)
     ON DELETE CASCADE)
 ENGINE = InnoDB
-AUTO_INCREMENT = 27
+AUTO_INCREMENT = 316
 DEFAULT CHARACTER SET = utf8mb3;
 
 

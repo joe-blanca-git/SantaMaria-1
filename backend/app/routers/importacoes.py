@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+import io
+import pandas as pd
 from app.core.database import get_db
 from app.schemas.importacao import ImportacaoPaginatedResponse
 from app.services.importacao_service import ImportacaoService
@@ -20,9 +23,10 @@ def get_importacoes(
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=1, le=100),
     search: str = Query(None, description="Busca por nome de arquivo ou tipo"),
+    categoria: str = Query(None, description="Categoria exata (ex: Composição, Prorrogação)"),
     service: ImportacaoService = Depends(get_service)
 ):
-    return service.listar_importacoes(page=page, size=size, search=search)
+    return service.listar_importacoes(page=page, size=size, search=search, categoria=categoria)
 
 @router.post("/ia/analise-extrato")
 async def analise_extrato_ia(
@@ -216,8 +220,251 @@ class AtacadaoHTMLParser(HTMLParser):
         if self.in_td_or_th:
             self.current_cell.append(data)
 
+
+async def conciliar_composicao_ws(wb, acr_file, rows_to_export, font_header, font_body, align_center, align_left, align_right):
+    if not acr_file or not acr_file.filename:
+        return
+    acr_bytes = await acr_file.read()
+    import io
+    import pandas as pd
+    from openpyxl.styles import PatternFill
+    import logging
+    debug_logger = logging.getLogger("composicao_debug")
+    debug_logger.setLevel(logging.DEBUG)
+    # Clear handlers
+    debug_logger.handlers = []
+    fh = logging.FileHandler('c:/Users/tania.canedo/Documents/git/SantaMaria/backend/app/routers/import_debug.log', mode='w', encoding='utf-8')
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    debug_logger.addHandler(fh)
+    
+    debug_logger.info("--- INICIANDO CONCILIACAO COMPOSICAO ---")
+    debug_logger.info(f"acr_file.filename: {acr_file.filename}")
+    debug_logger.info(f"rows_to_export count: {len(rows_to_export)}")
+    if rows_to_export:
+        debug_logger.info(f"Exemplo item export: {rows_to_export[0]}")
+        
+    try:
+        with open('c:/Users/tania.canedo/Documents/git/SantaMaria/backend/ACR_debug.xlsx', 'wb') as debug_f:
+            debug_f.write(acr_bytes)
+        debug_logger.info("Salvo ACR_debug.xlsx com sucesso")
+    except Exception as ex_save:
+        debug_logger.error(f"Erro ao salvar ACR_debug.xlsx: {str(ex_save)}")
+        
+    try:
+        df_acr = pd.read_excel(io.BytesIO(acr_bytes), header=None)
+        debug_logger.info("Lido com read_excel")
+    except Exception as ex:
+        debug_logger.error(f"Erro read_excel: {str(ex)}")
+        acr_text = acr_bytes.decode('utf-8', errors='ignore')
+        sep = ';' if ';' in acr_text else ','
+        df_acr = pd.read_csv(io.StringIO(acr_text), sep=sep, header=None)
+        debug_logger.info(f"Lido com read_csv, sep={sep}")
+        
+    debug_logger.info(f"df_acr shape: {df_acr.shape}")
+    debug_logger.info(f"Primeiras 10 linhas do df_acr:\n{df_acr.head(10).to_string()}")
+        
+    col_titulo = -1
+    col_parcela = -1
+    col_saldo = -1
+    
+    # 1. Busca pelo nome no cabeçalho
+    for idx, row in df_acr.head(30).iterrows():
+        row_strs = [str(x).strip().lower() for x in row.values]
+        for c_idx, val in enumerate(row_strs):
+            if val == 'titulo' or val == 'título' or 'titulo' in val or 'título' in val:
+                if col_titulo == -1: col_titulo = c_idx
+            if val == '/p' or val == 'parcela' or '/p' in val or 'parcela' in val:
+                if col_parcela == -1: col_parcela = c_idx
+            if val == 'saldo' or 'saldo' in val or 'valor l' in val:
+                if col_saldo == -1: col_saldo = c_idx
+        if col_titulo != -1 and col_parcela != -1 and col_saldo != -1:
+            break
+            
+    debug_logger.info(f"Apos busca de cabeçalho: col_titulo={col_titulo}, col_parcela={col_parcela}, col_saldo={col_saldo}")
+            
+    # 2. Heurística Robusta: auto-detecção cruzando NFs e valores
+    comp_map = {}
+    for item in rows_to_export:
+        nf = str(item.get('Nota Fiscal') or item.get('nf')).strip()
+        if nf:
+            v = abs(item.get('Valor Liquido') or item.get('valor_liquido') or 0.0)
+            if v > 0:
+                comp_map[nf.lstrip('0')] = v
+                
+    debug_logger.info(f"comp_map (NFs da Composicao lstrip): {list(comp_map.keys())[:10]}")
+    debug_logger.info(f"comp_map values: {list(comp_map.values())[:10]}")
+                
+    possible_titulo_cols = {}
+    possible_saldo_cols = {}
+    
+    for idx, row in df_acr.iterrows():
+        row_vals = list(row.values)
+        for c_idx, val in enumerate(row_vals):
+            if pd.isna(val):
+                continue
+            val_str = str(val).strip().split('.')[0]
+            if val_str.endswith('.0'): val_str = val_str[:-2]
+            val_clean = val_str.lstrip('0')
+            
+            if val_clean in comp_map:
+                possible_titulo_cols[c_idx] = possible_titulo_cols.get(c_idx, 0) + 1
+                expected_val = comp_map[val_clean]
+                for val_c_idx, val_cell in enumerate(row_vals):
+                    try:
+                        if isinstance(val_cell, str):
+                            val_cell_clean = val_cell.replace('R$', '').replace('.', '').replace(',', '.').strip()
+                            val_cell_float = abs(float(val_cell_clean))
+                        else:
+                            val_cell_float = abs(float(val_cell))
+                        if val_cell_float > 0 and abs(val_cell_float - expected_val) < 0.01:
+                            possible_saldo_cols[val_c_idx] = possible_saldo_cols.get(val_c_idx, 0) + 1
+                    except Exception:
+                        pass
+                        
+    debug_logger.info(f"possible_titulo_cols: {possible_titulo_cols}")
+    debug_logger.info(f"possible_saldo_cols: {possible_saldo_cols}")
+                        
+    if col_titulo == -1 and possible_titulo_cols:
+        col_titulo = max(possible_titulo_cols, key=possible_titulo_cols.get)
+    if col_saldo == -1 and possible_saldo_cols:
+        col_saldo = max(possible_saldo_cols, key=possible_saldo_cols.get)
+        
+    # Fallbacks finais baseados nos formatos mais comuns
+    if col_titulo == -1:
+        col_titulo = 2 # Coluna C
+    if col_parcela == -1:
+        if col_titulo != -1 and col_titulo + 1 < df_acr.shape[1]:
+            col_parcela = col_titulo + 1
+        else:
+            col_parcela = 3 # Coluna D
+    if col_saldo == -1:
+        col_saldo = 21 # Coluna V
+        
+    debug_logger.info(f"FINAL col_titulo={col_titulo}, col_parcela={col_parcela}, col_saldo={col_saldo}")
+
+    acr_data = {}
+    for idx, row in df_acr.iterrows():
+        if len(row) <= col_titulo or len(row) <= col_saldo:
+            continue
+            
+        val_d_raw = row[col_titulo]
+        if pd.isna(val_d_raw):
+            continue
+            
+        titulo = str(val_d_raw).strip().split('.')[0]
+        if not any(char.isdigit() for char in titulo):
+            continue
+            
+        if titulo.endswith('.0'):
+            titulo = titulo[:-2]
+            
+        # Pular se o titulo lstrip for vazio ou não numérico
+        titulo_clean = titulo.lstrip('0')
+        if not titulo_clean:
+            continue
+            
+        if col_parcela < len(row):
+            parcela_val = str(row[col_parcela]).strip().split('.')[0]
+            try:
+                # Filtrar apenas Parcela 01 (igual nas Prorrogações)
+                if int(parcela_val) != 1:
+                    continue
+            except ValueError:
+                pass
+                
+        saldo_val = row[col_saldo]
+        try:
+            if isinstance(saldo_val, str):
+                saldo_val = saldo_val.replace('R$', '').replace('.', '').replace(',', '.').strip()
+            saldo_float = float(saldo_val)
+            acr_data[titulo_clean] = abs(saldo_float)
+        except ValueError:
+            continue
+            
+    debug_logger.info(f"acr_data count: {len(acr_data)}")
+    debug_logger.info(f"Exemplo acr_data: {list(acr_data.items())[:10]}")
+            
+    ws2 = wb.create_sheet(title="Conciliação")
+    headers2 = ['Nota Fiscal', 'Parcela', 'Status NF', 'Valor Composição', 'Valor ACR', 'Status Valor', 'Diferença']
+    ws2.append(headers2)
+    for col_idx, col_name in enumerate(headers2, start=1):
+        cell = ws2.cell(row=1, column=col_idx)
+        cell.font = font_header
+        cell.alignment = align_left if col_idx <= 3 else align_right
+    fill_ok = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
+    fill_err = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+    accounting_format = '_("R$"* #,##0.00_);_("R$"* (#,##0.00);_("R$"* "-"_);_(@_)'
+    
+    for i, item in enumerate(rows_to_export):
+        nf = item.get('Nota Fiscal') or item.get('nf')
+        if not nf:
+            continue
+        nf_str = str(nf).strip()
+        val_comp = item.get('Valor Liquido') or item.get('valor_liquido') or 0.0
+        
+        status_nf = 'Não Encontrado'
+        status_val = '-'
+        val_acr = 0.0
+        
+        nf_clean = nf_str.lstrip('0')
+        if nf_clean.endswith('T') or nf_clean.endswith('t'):
+            nf_base = nf_clean[:-1]
+        else:
+            nf_base = nf_clean
+            
+        found_key = None
+        if nf_clean in acr_data:
+            found_key = nf_clean
+        elif nf_base in acr_data:
+            found_key = nf_base
+                    
+        if found_key:
+            status_nf = 'Encontrado'
+            val_acr = acr_data[found_key]
+            if abs(abs(val_comp) - val_acr) < 0.01:
+                status_val = 'OK'
+            else:
+                status_val = 'Divergente'
+                
+        r_idx = i + 2
+        ws2.cell(row=r_idx, column=1, value=nf_str).font = font_body
+        ws2.cell(row=r_idx, column=1).alignment = align_left
+        ws2.cell(row=r_idx, column=2, value="01").font = font_body
+        ws2.cell(row=r_idx, column=2).alignment = align_left
+        ws2.cell(row=r_idx, column=3, value=status_nf).font = font_body
+        ws2.cell(row=r_idx, column=3).alignment = align_left
+        c4 = ws2.cell(row=r_idx, column=4, value=val_comp)
+        c4.font = font_body
+        c4.number_format = accounting_format
+        c4.alignment = align_right
+        c5 = ws2.cell(row=r_idx, column=5, value=val_acr if status_nf == 'Encontrado' else None)
+        c5.font = font_body
+        c5.number_format = accounting_format
+        c5.alignment = align_right
+        c6 = ws2.cell(row=r_idx, column=6, value=status_val)
+        c6.font = font_body
+        c6.alignment = align_right
+        diferenca_val = (val_comp - val_acr) if status_val == 'Divergente' else None
+        c7 = ws2.cell(row=r_idx, column=7, value=diferenca_val)
+        c7.font = font_body
+        c7.number_format = accounting_format
+        c7.alignment = align_right
+        if status_nf == 'Encontrado' and status_val == 'OK':
+            for c in range(1, 8):
+                ws2.cell(row=r_idx, column=c).fill = fill_ok
+        else:
+            for c in range(1, 8):
+                ws2.cell(row=r_idx, column=c).fill = fill_err
+    ws2.column_dimensions['A'].width = 16
+    ws2.column_dimensions['B'].width = 10
+    ws2.column_dimensions['C'].width = 18
+    ws2.column_dimensions['D'].width = 18
+    ws2.column_dimensions['E'].width = 18
+    ws2.column_dimensions['F'].width = 16
+    ws2.column_dimensions['G'].width = 18
+
 @router.post("/atacadao/extrair")
-async def extrair_atacadao(file: UploadFile = File(...)):
+async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Arquivo inválido")
         
@@ -392,12 +639,18 @@ async def extrair_atacadao(file: UploadFile = File(...)):
         ws.column_dimensions['F'].width = 5
         ws.column_dimensions['G'].width = 20
 
+        await conciliar_composicao_ws(wb, acr_file, rows_to_export, font_header, font_body, align_center, align_left, align_right)
+
         # Salvar em buffer
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
         
         filename = file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
+        
+        # Registrar no banco
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Atacadão")
+        
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
             'Access-Control-Expose-Headers': 'Content-Disposition'
@@ -412,7 +665,7 @@ async def extrair_atacadao(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sendas/extrair")
-async def extrair_sendas(file: UploadFile = File(...)):
+async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Arquivo inválido")
         
@@ -625,12 +878,24 @@ async def extrair_sendas(file: UploadFile = File(...)):
         ws.column_dimensions['K'].width = 5
         ws.column_dimensions['L'].width = 20
 
+        # Transform notas_fiscais + abatimentos for conciliar (we need "Nota Fiscal" and "Valor Liquido")
+        all_items = []
+        for n in notas_fiscais:
+            all_items.append({"Nota Fiscal": n[0], "Valor Liquido": n[1]})
+        for a in abatimentos:
+            all_items.append({"Nota Fiscal": a[0], "Valor Liquido": a[1]})
+        await conciliar_composicao_ws(wb, acr_file, all_items, font_header, font_body, align_center, align_left, align_right)
+
         # Save to buffer
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
         
         filename = file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
+        
+        # Registrar no banco
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Sendas")
+        
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
             'Access-Control-Expose-Headers': 'Content-Disposition'
@@ -647,7 +912,8 @@ async def extrair_sendas(file: UploadFile = File(...)):
 @router.post("/atacadao/conciliar")
 async def conciliar_atacadao(
     html_file: UploadFile = File(...),
-    csv_file: UploadFile = File(...)
+    csv_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
     if not html_file.filename or not csv_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -715,6 +981,7 @@ async def conciliar_atacadao(
         # Process and filter CSV data:
         # Col A (0): filter only 104
         # Col D (3): invoice number
+        # Col E (4): parcela (must be 01)
         # Col P (15): due date (data de vencimento)
         csv_data_by_int = {}
         for idx, row in df_csv.iterrows():
@@ -727,6 +994,15 @@ async def conciliar_atacadao(
             if val_b != 'DP':
                 continue
             val_d = str(row[3]).strip().split('.')[0]
+            
+            # Filtro da Coluna E (Parcela) - sempre 01
+            val_e = str(row[4]).strip().split('.')[0]
+            try:
+                if int(val_e) != 1:
+                    continue
+            except ValueError:
+                continue
+                
             val_p = str(row[15]).strip()
             
             # Remove time component if present
@@ -888,6 +1164,10 @@ async def conciliar_atacadao(
         output.seek(0)
         
         filename = html_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
+        
+        # Registrar no banco
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Atacadão")
+        
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
             'Access-Control-Expose-Headers': 'Content-Disposition'
@@ -904,7 +1184,8 @@ async def conciliar_atacadao(
 @router.post("/sendas/conciliar")
 async def conciliar_sendas(
     sendas_file: UploadFile = File(...),
-    acr_file: UploadFile = File(...)
+    acr_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
     if not sendas_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1160,6 +1441,10 @@ async def conciliar_sendas(
         output.seek(0)
         
         filename = sendas_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
+        
+        # Registrar no banco
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Sendas")
+        
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
             'Access-Control-Expose-Headers': 'Content-Disposition'
@@ -1176,7 +1461,8 @@ async def conciliar_sendas(
 @router.post("/martminas/conciliar")
 async def conciliar_martminas(
     martminas_file: UploadFile = File(...),
-    acr_file: UploadFile = File(...)
+    acr_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
     if not martminas_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1436,6 +1722,10 @@ async def conciliar_martminas(
         output.seek(0)
         
         filename = martminas_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
+        
+        # Registrar no banco
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mart Minas")
+        
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
             'Access-Control-Expose-Headers': 'Content-Disposition'
@@ -1452,7 +1742,8 @@ async def conciliar_martminas(
 @router.post("/savegnago/conciliar")
 async def conciliar_savegnago(
     savegnago_file: UploadFile = File(...),
-    acr_file: UploadFile = File(...)
+    acr_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
     if not savegnago_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1484,13 +1775,19 @@ async def conciliar_savegnago(
         def parse_date(date_str):
             if not date_str:
                 return None
+            if isinstance(date_str, datetime.datetime):
+                return date_str.date()
+            if isinstance(date_str, datetime.date):
+                return date_str
             date_str = str(date_str).strip()
+            if hasattr(pd, 'Timestamp') and isinstance(date_str, pd.Timestamp):
+                return date_str.date()
             for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d/%m/%y', '%Y/%m/%d %H:%M:%S', '%d/%m/%Y %H:%M:%S'):
                 try:
-                    return datetime.datetime.strptime(date_str, fmt).date()
+                    return datetime.datetime.strptime(date_str.split()[0] if ' ' in date_str else date_str, fmt).date()
                 except ValueError:
                     continue
-            return date_str
+            return None
 
         # Helper to adjust Savegnago date
         def adjust_savegnago_date(d_val):
@@ -1503,6 +1800,12 @@ async def conciliar_savegnago(
             
             if day == 31 or (1 <= day <= 9):
                 new_day = 10
+                if day == 31:
+                    if month == 12:
+                        month = 1
+                        year += 1
+                    else:
+                        month += 1
             elif 11 <= day <= 19:
                 new_day = 20
             elif 21 <= day <= 29:
@@ -1517,7 +1820,8 @@ async def conciliar_savegnago(
                 if month == 2:
                     is_leap = (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))
                     last_day = 29 if is_leap else 28
-                    return datetime.date(year, month, last_day)
+                    if new_day > last_day:
+                        return datetime.date(year, month, last_day)
                 return d
 
         def format_date_to_br(date_val):
@@ -1531,8 +1835,6 @@ async def conciliar_savegnago(
             return str(date_val)
 
         # Parse Savegnago data
-        # Col D (3): Nota Fiscal
-        # Col I (8): Vencimento
         d_col_idx = 3
         i_col_idx = 8
         
@@ -1558,6 +1860,11 @@ async def conciliar_savegnago(
                 
             formatted_nf = clean_segment.zfill(7)
             
+            parcela = ""
+            qp_match = re.search(r'QP(\d+)', val_d_str)
+            if qp_match:
+                parcela = str(qp_match.group(1)).zfill(2)
+            
             date_raw = str(val_i_raw).strip()
             if ' ' in date_raw:
                 date_raw = date_raw.split()[0]
@@ -1567,6 +1874,7 @@ async def conciliar_savegnago(
             invoices_sav.append({
                 'raw_nf': clean_segment,
                 'nf': formatted_nf,
+                'parcela': parcela,
                 'vencimento': adjusted_date
             })
             
@@ -1593,23 +1901,33 @@ async def conciliar_savegnago(
 
         # Parse ACR data
         acr_d_col_idx = 3 # Column D
+        acr_e_col_idx = 4 # Column E (Parcela)
         acr_p_col_idx = 15 # Column P
         
-        acr_data_by_int = {}
+        acr_data_by_key = {}
         for idx, row in df_acr.iterrows():
+            if len(row) < 16:
+                continue
+                
             val_d_raw = row[acr_d_col_idx]
+            val_e_raw = row[acr_e_col_idx]
             val_p_raw = row[acr_p_col_idx]
             
             if pd.isna(val_d_raw) or pd.isna(val_p_raw):
                 continue
                 
-            val_d = str(val_d_raw).strip().split('.')[0]
+            val_d_str = str(val_d_raw).strip().split('.')[0]
+            val_e_str = str(val_e_raw).strip().split('.')[0]
+            
+            val_e = val_e_str.zfill(2) if val_e_str.isdigit() else val_e_str
+            
             val_p = str(val_p_raw).strip()
             if ' ' in val_p:
                 val_p = val_p.split()[0]
                 
             try:
-                acr_data_by_int[int(val_d)] = val_p
+                nf_int = int(val_d_str)
+                acr_data_by_key[(nf_int, val_e)] = parse_date(val_p) or val_p
             except ValueError:
                 continue
 
@@ -1622,21 +1940,24 @@ async def conciliar_savegnago(
         ws1.views.sheetView[0].showGridLines = True
         
         ws1.cell(row=1, column=1, value="Nota Fiscal")
-        ws1.cell(row=1, column=2, value="Vencimento")
+        ws1.cell(row=1, column=2, value="Parcela")
+        ws1.cell(row=1, column=3, value="Vencimento")
         
         for i, inv in enumerate(invoices_sav):
             row_num = i + 2
             ws1.cell(row=row_num, column=1, value=inv['nf'])
-            ws1.cell(row=row_num, column=2, value=format_date_to_br(inv['vencimento']))
+            ws1.cell(row=row_num, column=2, value=inv['parcela'])
+            ws1.cell(row=row_num, column=3, value=format_date_to_br(inv['vencimento']))
             
         # Tab 2
         ws2 = wb.create_sheet(title="Conciliação")
         ws2.views.sheetView[0].showGridLines = True
         
         ws2.cell(row=1, column=1, value="Nota Fiscal")
-        ws2.cell(row=1, column=2, value="Vencimento Savegnago")
-        ws2.cell(row=1, column=3, value="Vencimento ACR")
-        ws2.cell(row=1, column=4, value="Status")
+        ws2.cell(row=1, column=2, value="Parcela")
+        ws2.cell(row=1, column=3, value="Vencimento Savegnago")
+        ws2.cell(row=1, column=4, value="Vencimento ACR")
+        ws2.cell(row=1, column=5, value="Status")
 
         # Fonts, alignments and colors
         font_header = Font(name='Calibri', size=11, bold=True)
@@ -1648,7 +1969,7 @@ async def conciliar_savegnago(
         fill_div = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
 
         # Format Tab 1 Headers
-        for col_idx in [1, 2]:
+        for col_idx in [1, 2, 3]:
             cell = ws1.cell(row=1, column=col_idx)
             cell.font = font_header
             cell.alignment = align_left
@@ -1662,15 +1983,22 @@ async def conciliar_savegnago(
             
             c2 = ws1.cell(row=r_idx, column=2)
             c2.font = font_body
+            c2.number_format = '@'
             c2.alignment = align_center
+            
+            c3 = ws1.cell(row=r_idx, column=3)
+            c3.font = font_body
+            c3.alignment = align_center
 
         ws1.column_dimensions['A'].width = 16
-        ws1.column_dimensions['B'].width = 24
+        ws1.column_dimensions['B'].width = 10
+        ws1.column_dimensions['C'].width = 24
 
         # Conciliate
         for i, inv in enumerate(invoices_sav):
             row_num = i + 2
             nf_str = inv['nf']
+            parcela_str = inv['parcela']
             date_sav_val = inv['vencimento']
             
             try:
@@ -1682,15 +2010,16 @@ async def conciliar_savegnago(
             status = "Não encontrado no ACR"
             status_fill = None
             
-            if nf_int is not None and nf_int in acr_data_by_int:
-                date_acr_str = acr_data_by_int[nf_int]
+            search_key = (nf_int, parcela_str)
+            if nf_int is not None and search_key in acr_data_by_key:
+                date_acr_str = acr_data_by_key[search_key]
                 
                 if isinstance(date_sav_val, datetime.date):
                     d_sav = date_sav_val
                 else:
                     d_sav = parse_date(date_sav_val)
                     
-                d_acr = parse_date(date_acr_str)
+                d_acr = parse_date(date_acr_str) if not isinstance(date_acr_str, datetime.date) else date_acr_str
                 
                 if d_sav and d_acr:
                     if d_sav == d_acr:
@@ -1708,15 +2037,16 @@ async def conciliar_savegnago(
                         status_fill = fill_div
                         
             ws2.cell(row=row_num, column=1, value=nf_str)
-            ws2.cell(row=row_num, column=2, value=format_date_to_br(date_sav_val))
-            ws2.cell(row=row_num, column=3, value=format_date_to_br(date_acr_str))
+            ws2.cell(row=row_num, column=2, value=parcela_str)
+            ws2.cell(row=row_num, column=3, value=format_date_to_br(date_sav_val))
+            ws2.cell(row=row_num, column=4, value=format_date_to_br(date_acr_str))
             
-            status_cell = ws2.cell(row=row_num, column=4, value=status)
+            status_cell = ws2.cell(row=row_num, column=5, value=status)
             if status_fill:
                 status_cell.fill = status_fill
 
         # Format Tab 2 Headers
-        for col_idx in [1, 2, 3, 4]:
+        for col_idx in [1, 2, 3, 4, 5]:
             cell = ws2.cell(row=1, column=col_idx)
             cell.font = font_header
             cell.alignment = align_left
@@ -1728,6 +2058,7 @@ async def conciliar_savegnago(
             ws2.cell(row=r_idx, column=1).alignment = align_left
             
             ws2.cell(row=r_idx, column=2).font = font_body
+            ws2.cell(row=r_idx, column=2).number_format = '@'
             ws2.cell(row=r_idx, column=2).alignment = align_center
             
             ws2.cell(row=r_idx, column=3).font = font_body
@@ -1735,11 +2066,15 @@ async def conciliar_savegnago(
             
             ws2.cell(row=r_idx, column=4).font = font_body
             ws2.cell(row=r_idx, column=4).alignment = align_center
+            
+            ws2.cell(row=r_idx, column=5).font = font_body
+            ws2.cell(row=r_idx, column=5).alignment = align_center
 
         ws2.column_dimensions['A'].width = 16
-        ws2.column_dimensions['B'].width = 24
+        ws2.column_dimensions['B'].width = 10
         ws2.column_dimensions['C'].width = 24
         ws2.column_dimensions['D'].width = 24
+        ws2.column_dimensions['E'].width = 24
 
         # Save Workbook
         output = io.BytesIO()
@@ -1747,6 +2082,10 @@ async def conciliar_savegnago(
         output.seek(0)
         
         filename = savegnago_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
+        
+        from app.services.importacao_service import ImportacaoService
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Savegnago")
+        
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
             'Access-Control-Expose-Headers': 'Content-Disposition'
@@ -1758,6 +2097,581 @@ async def conciliar_savegnago(
             headers=headers_response
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/mateus/conciliar")
+async def conciliar_mateus(
+    mateus_file: UploadFile = File(...),
+    acr_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    if not mateus_file.filename or not acr_file.filename:
+        raise HTTPException(status_code=400, detail="Arquivos inválidos")
+        
+    try:
+        import io
+        import pandas as pd
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill
+        import datetime
+        import math
+        
+        # 1. Parse Mateus File
+        mateus_bytes = await mateus_file.read()
+        try:
+            df_mat = pd.read_excel(io.BytesIO(mateus_bytes), header=None)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Arquivo Mateus deve ser Excel.")
+            
+        def parse_date(date_str):
+            if not date_str:
+                return None
+            if isinstance(date_str, datetime.datetime):
+                return date_str.date()
+            if isinstance(date_str, datetime.date):
+                return date_str
+            date_str = str(date_str).strip()
+            if hasattr(pd, 'Timestamp') and isinstance(date_str, pd.Timestamp):
+                return date_str.date()
+            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d/%m/%y', '%Y/%m/%d %H:%M:%S', '%d/%m/%Y %H:%M:%S'):
+                try:
+                    return datetime.datetime.strptime(date_str.split()[0] if ' ' in date_str else date_str, fmt).date()
+                except ValueError:
+                    continue
+            return None
+
+        mateus_invoices = []
+        for idx, row in df_mat.iterrows():
+            if len(row) < 6:
+                continue
+            
+            nf_raw = str(row[2]).strip() # Col C (index 2)
+            date_raw = row[5] # Col F (index 5)
+            
+            if not nf_raw or nf_raw.lower() in ('nan', 'none', 'nota fiscal', 'nota', 'nota_fiscal'):
+                continue
+                
+            nf_clean = nf_raw.split('/')[0].strip()
+            
+            if not nf_clean:
+                continue
+                
+            if not any(char.isdigit() for char in nf_clean):
+                continue
+            
+            try:
+                nf_clean = str(int(float(nf_clean))).zfill(7)
+            except ValueError:
+                nf_clean = nf_clean.zfill(7)
+            
+            d_parsed = parse_date(date_raw)
+            d_adjusted = d_parsed if d_parsed else date_raw
+            
+            mateus_invoices.append({
+                'raw_nf': nf_raw,
+                'nf': nf_clean,
+                'prorrogacao': d_adjusted
+            })
+            
+        if not mateus_invoices:
+            raise HTTPException(status_code=400, detail="Nenhuma nota fiscal encontrada no arquivo Mateus.")
+
+        # 2. Parse ACR File
+        acr_bytes = await acr_file.read()
+        try:
+            df_acr = pd.read_excel(io.BytesIO(acr_bytes), header=None)
+        except Exception:
+            acr_text = acr_bytes.decode('utf-8', errors='ignore')
+            sep = ';' if ';' in acr_text else ','
+            df_acr = pd.read_csv(io.StringIO(acr_text), sep=sep, header=None)
+            
+        acr_data_by_int = {}
+        for idx, row in df_acr.iterrows():
+            if len(row) < 16:
+                continue
+                
+            val_d_raw = str(row[3]).strip()
+            if not val_d_raw or val_d_raw.lower() in ('nan', 'none'):
+                continue
+                
+            val_d = val_d_raw.split('.')[0]
+            val_p = str(row[15]).strip()
+            if ' ' in val_p:
+                val_p = val_p.split()[0]
+                
+            try:
+                acr_data_by_int[int(val_d)] = parse_date(val_p) or val_p
+            except ValueError:
+                continue
+                
+        # 3. Create Excel
+        def format_date_to_br(d):
+            if isinstance(d, datetime.date):
+                return d.strftime('%d/%m/%Y')
+            return str(d) if d else ""
+
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = "Prorrogações Mateus"
+        ws1.views.sheetView[0].showGridLines = True
+        
+        ws1.cell(row=1, column=1, value="Nota Fiscal")
+        ws1.cell(row=1, column=2, value="Data de Prorrogação")
+        
+        for i, inv in enumerate(mateus_invoices):
+            ws1.cell(row=i+2, column=1, value=inv['nf'])
+            ws1.cell(row=i+2, column=2, value=format_date_to_br(inv['prorrogacao']))
+            
+        ws2 = wb.create_sheet(title="Conciliação")
+        ws2.views.sheetView[0].showGridLines = True
+        ws2.cell(row=1, column=1, value="Nota Fiscal")
+        ws2.cell(row=1, column=2, value="Data Mateus (Prorrogação)")
+        ws2.cell(row=1, column=3, value="Data ACR (Vencimento)")
+        ws2.cell(row=1, column=4, value="Status")
+        
+        font_header = Font(name='Calibri', size=11, bold=True)
+        font_body = Font(name='Calibri', size=11, bold=False)
+        align_left = Alignment(horizontal='left', vertical='center')
+        align_center = Alignment(horizontal='center', vertical='center')
+        
+        fill_ok = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        fill_div = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+        
+        for col_idx in [1, 2]:
+            cell = ws1.cell(row=1, column=col_idx)
+            cell.font = font_header
+            cell.alignment = align_left
+            
+        for r_idx in range(2, len(mateus_invoices) + 2):
+            ws1.cell(row=r_idx, column=1).font = font_body
+            ws1.cell(row=r_idx, column=1).number_format = '@'
+            ws1.cell(row=r_idx, column=1).alignment = align_left
+            ws1.cell(row=r_idx, column=2).font = font_body
+            ws1.cell(row=r_idx, column=2).alignment = align_center
+            
+        ws1.column_dimensions['A'].width = 16
+        ws1.column_dimensions['B'].width = 24
+        
+        for i, inv in enumerate(mateus_invoices):
+            row_num = i + 2
+            nf_str = inv['nf']
+            d_mat = inv['prorrogacao']
+            
+            try:
+                nf_int = int(nf_str)
+            except ValueError:
+                nf_int = None
+                
+            d_acr = None
+            status = "Não encontrado no ACR"
+            status_fill = None
+            
+            if nf_int is not None and nf_int in acr_data_by_int:
+                d_acr = acr_data_by_int[nf_int]
+                
+                if isinstance(d_mat, datetime.date) and isinstance(d_acr, datetime.date):
+                    if d_mat == d_acr:
+                        status = "OK"
+                        status_fill = fill_ok
+                    else:
+                        status = "Divergente"
+                        status_fill = fill_div
+                else:
+                    if str(format_date_to_br(d_mat)).strip() == str(format_date_to_br(d_acr)).strip():
+                        status = "OK"
+                        status_fill = fill_ok
+                    else:
+                        status = "Divergente"
+                        status_fill = fill_div
+                        
+            ws2.cell(row=row_num, column=1, value=nf_str)
+            ws2.cell(row=row_num, column=2, value=format_date_to_br(d_mat))
+            ws2.cell(row=row_num, column=3, value=format_date_to_br(d_acr))
+            
+            status_cell = ws2.cell(row=row_num, column=4, value=status)
+            if status_fill:
+                status_cell.fill = status_fill
+
+        for col_idx in [1, 2, 3, 4]:
+            cell = ws2.cell(row=1, column=col_idx)
+            cell.font = font_header
+            cell.alignment = align_left
+            
+        for r_idx in range(2, len(mateus_invoices) + 2):
+            ws2.cell(row=r_idx, column=1).font = font_body
+            ws2.cell(row=r_idx, column=1).number_format = '@'
+            ws2.cell(row=r_idx, column=1).alignment = align_left
+            ws2.cell(row=r_idx, column=2).font = font_body
+            ws2.cell(row=r_idx, column=2).alignment = align_center
+            ws2.cell(row=r_idx, column=3).font = font_body
+            ws2.cell(row=r_idx, column=3).alignment = align_center
+            ws2.cell(row=r_idx, column=4).font = font_body
+            ws2.cell(row=r_idx, column=4).alignment = align_center
+            
+        ws2.column_dimensions['A'].width = 16
+        ws2.column_dimensions['B'].width = 28
+        ws2.column_dimensions['C'].width = 28
+        ws2.column_dimensions['D'].width = 24
+        
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        filename = mateus_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
+        
+        from app.services.importacao_service import ImportacaoService
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mateus")
+        
+        headers_response = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/drogaraia/conciliar")
+async def conciliar_drogaraia(
+    drogaraia_file: UploadFile = File(...),
+    acr_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    if not drogaraia_file.filename or not acr_file.filename:
+        raise HTTPException(status_code=400, detail="Arquivos inválidos")
+        
+    try:
+        import io
+        import pandas as pd
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill
+        import datetime
+        import math
+        
+        # 1. Parse Droga Raia File
+        drogaraia_bytes = await drogaraia_file.read()
+        try:
+            df_dr = pd.read_excel(io.BytesIO(drogaraia_bytes), header=None)
+        except Exception:
+            try:
+                dr_text = drogaraia_bytes.decode('utf-8', errors='ignore')
+                sep = ';' if ';' in dr_text else ','
+                df_dr = pd.read_csv(io.StringIO(dr_text), sep=sep, header=None)
+            except Exception:
+                try:
+                    dr_text = drogaraia_bytes.decode('utf-8', errors='ignore')
+                    dfs = pd.read_html(io.StringIO(dr_text), header=None)
+                    df_dr = dfs[0]
+                except Exception:
+                    file_head = drogaraia_bytes[:100].decode('utf-8', errors='ignore')
+                    with open("c:/Users/tania.canedo/.gemini/antigravity-ide/brain/612f4152-c197-44cc-a836-c8cadee18fba/scratch/file_format.log", "w") as f:
+                        f.write(file_head)
+                    raise HTTPException(status_code=400, detail=f"Arquivo desconhecido. Início do arquivo: {file_head[:50]}")
+            
+        def parse_date(date_str):
+            if not date_str:
+                return None
+            if isinstance(date_str, datetime.datetime):
+                return date_str.date()
+            if isinstance(date_str, datetime.date):
+                return date_str
+            date_str = str(date_str).strip()
+            if hasattr(pd, 'Timestamp') and isinstance(date_str, pd.Timestamp):
+                return date_str.date()
+                
+            # Tratamento para datas em português ("4 de set de 2026")
+            import re
+            pt_months = {
+                'jan': 1, 'fev': 2, 'mar': 3, 'abr': 4, 'mai': 5, 'jun': 6,
+                'jul': 7, 'ago': 8, 'set': 9, 'out': 10, 'nov': 11, 'dez': 12
+            }
+            pt_match = re.match(r'^(\d{1,2})\s+de\s+([a-zA-Z]{3,4})\s+de\s+(\d{4})$', date_str.lower())
+            if pt_match:
+                day = int(pt_match.group(1))
+                month_str = pt_match.group(2)[:3]
+                year = int(pt_match.group(3))
+                if month_str in pt_months:
+                    return datetime.date(year, pt_months[month_str], day)
+                    
+            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d/%m/%y', '%Y/%m/%d %H:%M:%S', '%d/%m/%Y %H:%M:%S'):
+                try:
+                    return datetime.datetime.strptime(date_str.split()[0] if ' ' in date_str else date_str, fmt).date()
+                except ValueError:
+                    continue
+            return None
+
+        drogaraia_invoices = []
+        for idx, row in df_dr.iterrows():
+            if len(row) < 7:
+                continue
+            
+            nf_raw = str(row[4]).strip() # Col E (index 4)
+            date_raw = row[6] # Col G (index 6)
+            
+            if not nf_raw or nf_raw.lower() in ('nan', 'none', 'nota fiscal', 'nota', 'nota_fiscal'):
+                continue
+                
+            nf_clean = nf_raw.split('/')[0].strip()
+            
+            if not nf_clean:
+                continue
+                
+            if not any(char.isdigit() for char in nf_clean):
+                continue
+            
+            try:
+                nf_clean = str(int(float(nf_clean))).zfill(7)
+            except ValueError:
+                nf_clean = nf_clean.zfill(7)
+            
+            d_parsed = parse_date(date_raw)
+            d_adjusted = d_parsed if d_parsed else date_raw
+            
+            drogaraia_invoices.append({
+                'raw_nf': nf_raw,
+                'nf': nf_clean,
+                'prorrogacao': d_adjusted
+            })
+            
+        if not drogaraia_invoices:
+            with open("c:/Users/tania.canedo/.gemini/antigravity-ide/brain/612f4152-c197-44cc-a836-c8cadee18fba/scratch/error.log", "a") as f:
+                f.write(f"Droga Raia invoices empty. len(df_dr.columns)={len(df_dr.columns)}, rows={len(df_dr)}\n")
+            raise HTTPException(status_code=400, detail="Nenhuma nota fiscal encontrada no arquivo Droga Raia.")
+
+        # 2. Parse ACR File
+        acr_bytes = await acr_file.read()
+        try:
+            df_acr = pd.read_excel(io.BytesIO(acr_bytes), header=None)
+        except Exception:
+            acr_text = acr_bytes.decode('utf-8', errors='ignore')
+            sep = ';' if ';' in acr_text else ','
+            df_acr = pd.read_csv(io.StringIO(acr_text), sep=sep, header=None)
+            
+        acr_data_by_int = {}
+        for idx, row in df_acr.iterrows():
+            if len(row) < 16:
+                continue
+                
+            val_d_raw = str(row[3]).strip()
+            if not val_d_raw or val_d_raw.lower() in ('nan', 'none'):
+                continue
+                
+            val_d = val_d_raw.split('.')[0]
+            val_p = str(row[15]).strip()
+            if ' ' in val_p:
+                val_p = val_p.split()[0]
+                
+            try:
+                acr_data_by_int[int(val_d)] = parse_date(val_p) or val_p
+            except ValueError:
+                continue
+                
+        # 3. Create Excel
+        def format_date_to_br(d):
+            if isinstance(d, datetime.date):
+                return d.strftime('%d/%m/%Y')
+            return str(d) if d else ""
+
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = "Prorrogações Droga Raia"
+        ws1.views.sheetView[0].showGridLines = True
+        
+        ws1.cell(row=1, column=1, value="Nota Fiscal")
+        ws1.cell(row=1, column=2, value="Data de Prorrogação")
+        
+        for i, inv in enumerate(drogaraia_invoices):
+            ws1.cell(row=i+2, column=1, value=inv['nf'])
+            ws1.cell(row=i+2, column=2, value=format_date_to_br(inv['prorrogacao']))
+            
+        ws2 = wb.create_sheet(title="Conciliação")
+        ws2.views.sheetView[0].showGridLines = True
+        ws2.cell(row=1, column=1, value="Nota Fiscal")
+        ws2.cell(row=1, column=2, value="Data Droga Raia (Prorrogação)")
+        ws2.cell(row=1, column=3, value="Data ACR (Vencimento)")
+        ws2.cell(row=1, column=4, value="Status")
+        
+        font_header = Font(name='Calibri', size=11, bold=True)
+        font_body = Font(name='Calibri', size=11, bold=False)
+        align_left = Alignment(horizontal='left', vertical='center')
+        align_center = Alignment(horizontal='center', vertical='center')
+        
+        fill_ok = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        fill_div = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+        
+        for col_idx in [1, 2]:
+            cell = ws1.cell(row=1, column=col_idx)
+            cell.font = font_header
+            cell.alignment = align_left
+            
+        for r_idx in range(2, len(drogaraia_invoices) + 2):
+            ws1.cell(row=r_idx, column=1).font = font_body
+            ws1.cell(row=r_idx, column=1).number_format = '@'
+            ws1.cell(row=r_idx, column=1).alignment = align_left
+            ws1.cell(row=r_idx, column=2).font = font_body
+            ws1.cell(row=r_idx, column=2).alignment = align_center
+            
+        ws1.column_dimensions['A'].width = 16
+        ws1.column_dimensions['B'].width = 24
+        
+        for i, inv in enumerate(drogaraia_invoices):
+            row_num = i + 2
+            nf_str = inv['nf']
+            d_dr = inv['prorrogacao']
+            
+            try:
+                nf_int = int(nf_str)
+            except ValueError:
+                nf_int = None
+                
+            d_acr = None
+            status = "Não encontrado no ACR"
+            status_fill = None
+            
+            if nf_int is not None and nf_int in acr_data_by_int:
+                d_acr = acr_data_by_int[nf_int]
+                
+                if isinstance(d_dr, datetime.date) and isinstance(d_acr, datetime.date):
+                    if d_dr == d_acr:
+                        status = "OK"
+                        status_fill = fill_ok
+                    else:
+                        status = "Divergente"
+                        status_fill = fill_div
+                else:
+                    if str(format_date_to_br(d_dr)).strip() == str(format_date_to_br(d_acr)).strip():
+                        status = "OK"
+                        status_fill = fill_ok
+                    else:
+                        status = "Divergente"
+                        status_fill = fill_div
+                        
+            ws2.cell(row=row_num, column=1, value=nf_str)
+            ws2.cell(row=row_num, column=2, value=format_date_to_br(d_dr))
+            ws2.cell(row=row_num, column=3, value=format_date_to_br(d_acr))
+            
+            status_cell = ws2.cell(row=row_num, column=4, value=status)
+            if status_fill:
+                status_cell.fill = status_fill
+
+        for col_idx in [1, 2, 3, 4]:
+            cell = ws2.cell(row=1, column=col_idx)
+            cell.font = font_header
+            cell.alignment = align_left
+            
+        for r_idx in range(2, len(drogaraia_invoices) + 2):
+            ws2.cell(row=r_idx, column=1).font = font_body
+            ws2.cell(row=r_idx, column=1).number_format = '@'
+            ws2.cell(row=r_idx, column=1).alignment = align_left
+            ws2.cell(row=r_idx, column=2).font = font_body
+            ws2.cell(row=r_idx, column=2).alignment = align_center
+            ws2.cell(row=r_idx, column=3).font = font_body
+            ws2.cell(row=r_idx, column=3).alignment = align_center
+            ws2.cell(row=r_idx, column=4).font = font_body
+            ws2.cell(row=r_idx, column=4).alignment = align_center
+            
+        ws2.column_dimensions['A'].width = 16
+        ws2.column_dimensions['B'].width = 32
+        ws2.column_dimensions['C'].width = 28
+        ws2.column_dimensions['D'].width = 24
+        
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        filename = drogaraia_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
+        
+        from app.services.importacao_service import ImportacaoService
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Droga Raia")
+        
+        headers_response = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/conciliacao-pagamentos/ler-apb")
+async def ler_apb_planilha(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        df = pd.read_excel(io.BytesIO(content), header=None)
+
+        if df.shape[1] < 5:
+            raise HTTPException(
+                status_code=400,
+                detail="A planilha APB deve conter pelo menos 5 colunas (colunas D e E)."
+            )
+
+        # Column D (index 3) is values
+        df[3] = pd.to_numeric(df[3], errors='coerce').fillna(0.0)
+
+        # Clean names and map invalid/ND placeholders to "Erro"
+        def clean_and_map_name(val):
+            if val is None or pd.isna(val):
+                return "Erro"
+            val_str = str(val).strip()
+            val_upper = val_str.upper()
+            # Ignore headers completely
+            if val_upper in ["FORNECEDOR", "NOME", "FAVORECIDO", "BENEFICIÁRIO", "BENEFICIARIO", "NOME COMPLETO"]:
+                return None
+            # Map ND and empty items to "Erro"
+            if val_upper in ["ND", "N/D", "NAN", "", "NONE", "NULL"]:
+                return "Erro"
+            return val_str
+
+        result = []
+        seen_valid = {}  # maps valid_name -> index in result_list
+
+        for _, row in df.iterrows():
+            name = clean_and_map_name(row[4])
+            if name is None:
+                continue
+
+            value = float(row[3])
+
+            if name == "Erro":
+                result.append({
+                    "nome": "Erro",
+                    "valor": value
+                })
+            else:
+                if name in seen_valid:
+                    idx = seen_valid[name]
+                    result[idx]["valor"] += value
+                else:
+                    seen_valid[name] = len(result)
+                    result.append({
+                        "nome": name,
+                        "valor": value
+                    })
+
+        # Print list to Python console as requested
+        print("\n=== LISTA DE PESSOAS CONSOLIDADAS (PLANILHA APB) ===")
+        for idx, item in enumerate(result):
+            print(f"{idx+1}. {item['nome']}: R$ {item['valor']:.2f}")
+        print("====================================================\n")
+
+        return {"sucesso": True, "dados": result}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 from datetime import datetime
@@ -2215,9 +3129,30 @@ async def conciliar_pagamentos_cruzamento(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+class ExportarConciliacaoRequest(BaseModel):
+    dados: List[dict]
+    fileName: Optional[str] = "conciliacao_pagamentos.xlsx"
+
 @router.post("/conciliacao-pagamentos/exportar")
-def exportar_conciliacao(dados: List[dict]):
+def exportar_conciliacao(
+    req: ExportarConciliacaoRequest,
+    db: Session = Depends(get_db)
+):
     try:
+        dados = req.dados
+        filename = req.fileName or "conciliacao_pagamentos.xlsx"
+
+        # Calculate stats
+        matched = sum(1 for d in dados if d.get("status") == "conciliado")
+        unmatched = sum(1 for d in dados if d.get("status") == "nao_encontrado")
+        divergent = sum(1 for d in dados if d.get("status") == "divergente")
+        status_val = "warning" if divergent > 0 else "success"
+        user_val = "Ana Paula (Financeiro)"
+
+        # Save Importacao record in database
+        tipo_str = f"CONCILIACAO_BANCARIA|{matched}|{unmatched}|{divergent}|{status_val}|{user_val}"
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", tipo_str)
+
         df = pd.DataFrame(dados)
         df_rename = df.rename(columns={
             "banco_data": "Data Banco",
@@ -2241,7 +3176,7 @@ def exportar_conciliacao(dados: List[dict]):
         output.seek(0)
         
         headers_response = {
-            'Content-Disposition': 'attachment; filename="conciliacao_pagamentos.xlsx"',
+            'Content-Disposition': f'attachment; filename="{filename}"',
             'Access-Control-Expose-Headers': 'Content-Disposition'
         }
         
@@ -2251,6 +3186,8 @@ def exportar_conciliacao(dados: List[dict]):
             headers=headers_response
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/plano-saude/sorriso/analisar")
@@ -2279,11 +3216,31 @@ async def analisar_plano_saude_sorriso(
         
         titulares_extraidos = res_ia.get("titulares", [])
         
+        import difflib
+        from app.repositories.colaborador_alias_repository import ColaboradorAliasRepository
+        alias_repo = ColaboradorAliasRepository(db)
+        
         # Injetar o Centro de Custo correspondente do banco para cada titular
         for t in titulares_extraidos:
-            colab = colab_repo.get_by_nome(t.get("nome_db", ""))
+            nome_pdf = t.get("nome_pdf", "")
+            
+            # 1. Verifica na tabela de Alias (aprendizado)
+            alias_record = alias_repo.get_by_nome_divergente(nome_pdf)
+            if alias_record and alias_record.colaborador:
+                nome_db = alias_record.colaborador.nome
+            else:
+                # 2. Tentar achar o nome mais parecido no banco para evitar falsos negativos e falhas da IA
+                nome_db = nome_pdf
+                closest = difflib.get_close_matches(nome_pdf, nomes_colaboradores, n=1, cutoff=0.8)
+                if closest:
+                    nome_db = closest[0]
+                
+            t["nome_db"] = nome_db
+            
+            colab = colab_repo.get_by_nome(nome_db)
             if not colab:
-                colab = colab_repo.get_by_nome(t.get("nome_pdf", ""))
+                colab = colab_repo.get_by_nome(nome_pdf)
+                
             if colab and colab.centro_custo:
                 t["centro_custo"] = str(colab.centro_custo.codigo)
             else:
@@ -2356,6 +3313,7 @@ class TitularConfirmar(BaseModel):
 class ConfirmarImportacaoSorrisoPayload(BaseModel):
     nomeArquivo: str
     titulares: List[TitularConfirmar]
+    idEmpresa: Optional[int] = None
 
 @router.post("/plano-saude/sorriso/confirmar")
 def confirmar_importacao_plano_saude_sorriso(
@@ -2375,39 +3333,59 @@ def confirmar_importacao_plano_saude_sorriso(
         colab_repo = ColaboradorRepository(db)
         cat_repo = CategoriaRepository(db)
         
-        # 1. Encontrar ou criar Categoria "Plano de Saúde"
-        cat = cat_repo.get_by_nome("Plano de Saúde")
-        if not cat:
-            cat = cat_repo.get_by_nome("Plano de Saude")
-        if not cat:
-            try:
-                # Criar nova categoria
-                novo_cat = CategoriaCreate(nome="Plano de Saúde", descricao="Despesas com planos de saúde e odontológicos")
-                cat = cat_repo.create(novo_cat)
-            except Exception:
-                # Fallback para categoria "Outros" (ID 8) se falhar
-                cat = cat_repo.get_by_id(8)
-                if not cat:
-                    raise HTTPException(status_code=400, detail="Categoria Plano de Saúde não encontrada e fallback falhou.")
-        
-        # 2. Encontrar empresa "RDV - SANTA MARIA"
-        emp = emp_repo.get_by_nome("RDV - SANTA MARIA")
+        emp = None
+        if payload.idEmpresa is not None:
+            emp = emp_repo.get_by_id(payload.idEmpresa)
+            
         if not emp:
-            # Fallback para a primeira empresa cadastrada no banco se não encontrar
+            emp = emp_repo.get_by_nome("RDV - SANTA MARIA")
+        if not emp:
             from app.models.empresa import Empresa as ModelEmpresa
             empresas_todas = db.query(ModelEmpresa).all()
             if empresas_todas:
                 emp = empresas_todas[0]
             else:
-                raise HTTPException(status_code=400, detail="Empresa RDV - SANTA MARIA não encontrada e nenhuma outra cadastrada.")
+                raise HTTPException(status_code=400, detail="Empresa RDV - SANTA MARIA não encontrada.")
                 
-        # 3. Criar registro de Importacao
+        is_seguro = "seguro" in emp.nome.lower()
+        
+        if is_seguro:
+            cat = cat_repo.get_by_id(9)
+            if not cat:
+                cat = cat_repo.get_by_nome("Seguro/Saúde")
+            if not cat:
+                cat = cat_repo.get_by_nome("Seguro/Saude")
+            if not cat:
+                try:
+                    novo_cat = CategoriaCreate(nome="Seguro/Saúde", descricao="Despesas com seguros e saúde")
+                    cat = cat_repo.create(novo_cat)
+                except Exception:
+                    cat = None
+            if not cat:
+                class MockCat:
+                    idCategorias = 9
+                cat = MockCat()
+        else:
+            cat = cat_repo.get_by_nome("Plano de Saúde")
+            if not cat:
+                cat = cat_repo.get_by_nome("Plano de Saude")
+            if not cat:
+                try:
+                    novo_cat = CategoriaCreate(nome="Plano de Saúde", descricao="Despesas com planos de saúde e odontológicos")
+                    cat = cat_repo.create(novo_cat)
+                except Exception:
+                    cat = cat_repo.get_by_id(8)
+                    if not cat:
+                        raise HTTPException(status_code=400, detail="Categoria Plano de Saúde não encontrada e fallback falhou.")
+                        
         extensao = payload.nomeArquivo.split('.')[-1] if '.' in payload.nomeArquivo else 'pdf'
+        tipo_importacao = "SEGURO" if is_seguro else "PLANO_SAUDE"
+        
         nova_importacao = Importacao(
             nomeArquivo=payload.nomeArquivo,
             extensaoArquivo=extensao,
             idEmpresa=emp.idEmpresas,
-            tipo="PLANO_SAUDE_SORRISO"
+            tipo=tipo_importacao
         )
         db.add(nova_importacao)
         db.flush() # Gerar idImportacoes
@@ -2430,6 +3408,15 @@ def confirmar_importacao_plano_saude_sorriso(
             if not colab:
                 erros_colaboradores.append(t.nome_db)
                 continue
+                
+            # --- SALVAR O ALIAS / APRENDIZADO ---
+            if t.nome_pdf and t.nome_pdf.strip().upper() != colab.nome.strip().upper():
+                try:
+                    from app.repositories.colaborador_alias_repository import ColaboradorAliasRepository
+                    alias_repo = ColaboradorAliasRepository(db)
+                    alias_repo.create_or_update(colab.idColaborador, t.nome_pdf.strip())
+                except Exception as ex:
+                    print(f"[WARN] Falha ao salvar Alias de colaborador: {ex}")
                 
             # Atualizar Centro de Custo do Colaborador se foi modificado
             if t.centro_custo and t.centro_custo != "N/D":
@@ -2637,6 +3624,7 @@ class TitularConfirmarUnimed(BaseModel):
 class ConfirmarImportacaoUnimedPayload(BaseModel):
     nomeArquivo: str
     titulares: List[TitularConfirmarUnimed]
+    idEmpresa: Optional[int] = None
 
 @router.post("/plano-saude/unimed-odonto/confirmar")
 def confirmar_importacao_plano_saude_unimed_odonto(
@@ -2656,19 +3644,12 @@ def confirmar_importacao_plano_saude_unimed_odonto(
         colab_repo = ColaboradorRepository(db)
         cat_repo = CategoriaRepository(db)
         
-        cat = cat_repo.get_by_nome("Plano de Saúde")
-        if not cat:
-            cat = cat_repo.get_by_nome("Plano de Saude")
-        if not cat:
-            try:
-                novo_cat = CategoriaCreate(nome="Plano de Saúde", descricao="Despesas com planos de saúde e odontológicos")
-                cat = cat_repo.create(novo_cat)
-            except Exception:
-                cat = cat_repo.get_by_id(8)
-                if not cat:
-                    raise HTTPException(status_code=400, detail="Categoria Plano de Saúde não encontrada e fallback falhou.")
-        
-        emp = emp_repo.get_by_nome("RDV - SANTA MARIA")
+        emp = None
+        if payload.idEmpresa is not None:
+            emp = emp_repo.get_by_id(payload.idEmpresa)
+            
+        if not emp:
+            emp = emp_repo.get_by_nome("RDV - SANTA MARIA")
         if not emp:
             from app.models.empresa import Empresa as ModelEmpresa
             empresas_todas = db.query(ModelEmpresa).all()
@@ -2677,12 +3658,45 @@ def confirmar_importacao_plano_saude_unimed_odonto(
             else:
                 raise HTTPException(status_code=400, detail="Empresa RDV - SANTA MARIA não encontrada.")
                 
+        is_seguro = "seguro" in emp.nome.lower()
+        
+        if is_seguro:
+            cat = cat_repo.get_by_id(9)
+            if not cat:
+                cat = cat_repo.get_by_nome("Seguro/Saúde")
+            if not cat:
+                cat = cat_repo.get_by_nome("Seguro/Saude")
+            if not cat:
+                try:
+                    novo_cat = CategoriaCreate(nome="Seguro/Saúde", descricao="Despesas com seguros e saúde")
+                    cat = cat_repo.create(novo_cat)
+                except Exception:
+                    cat = None
+            if not cat:
+                class MockCat:
+                    idCategorias = 9
+                cat = MockCat()
+        else:
+            cat = cat_repo.get_by_nome("Plano de Saúde")
+            if not cat:
+                cat = cat_repo.get_by_nome("Plano de Saude")
+            if not cat:
+                try:
+                    novo_cat = CategoriaCreate(nome="Plano de Saúde", descricao="Despesas com planos de saúde e odontológicos")
+                    cat = cat_repo.create(novo_cat)
+                except Exception:
+                    cat = cat_repo.get_by_id(8)
+                    if not cat:
+                        raise HTTPException(status_code=400, detail="Categoria Plano de Saúde não encontrada e fallback falhou.")
+                        
         extensao = payload.nomeArquivo.split('.')[-1] if '.' in payload.nomeArquivo else 'pdf'
+        tipo_importacao = "SEGURO" if is_seguro else "PLANO_SAUDE"
+        
         nova_importacao = Importacao(
             nomeArquivo=payload.nomeArquivo,
             extensaoArquivo=extensao,
             idEmpresa=emp.idEmpresas,
-            tipo="PLANO_SAUDE_UNIMED_ODONTO"
+            tipo=tipo_importacao
         )
         db.add(nova_importacao)
         db.flush()
@@ -2807,3 +3821,256 @@ def exportar_unimed_odonto_excel(
 
 
 
+
+@router.post("/cema/conciliar")
+async def conciliar_cema(
+    cema_file: UploadFile = File(...),
+    acr_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    if not cema_file.filename or not acr_file.filename:
+        raise HTTPException(status_code=400, detail="Arquivos inválidos")
+        
+    try:
+        import io
+        import pandas as pd
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill
+        import datetime
+        import math
+        
+        # 1. Parse Cema File
+        cema_bytes = await cema_file.read()
+        try:
+            df_cema = pd.read_excel(io.BytesIO(cema_bytes), header=None)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Arquivo Cema deve ser Excel.")
+            
+        # Parse Dates Helper
+        def parse_date(date_str):
+            if not date_str:
+                return None
+            if isinstance(date_str, datetime.datetime):
+                return date_str.date()
+            if isinstance(date_str, datetime.date):
+                return date_str
+            date_str = str(date_str).strip()
+            if hasattr(pd, 'Timestamp') and isinstance(date_str, pd.Timestamp):
+                return date_str.date()
+            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d/%m/%y', '%Y/%m/%d %H:%M:%S', '%d/%m/%Y %H:%M:%S'):
+                try:
+                    return datetime.datetime.strptime(date_str.split()[0] if ' ' in date_str else date_str, fmt).date()
+                except ValueError:
+                    continue
+            return None
+
+        # Next Wednesday Helper
+        def get_next_wednesday(d):
+            if not isinstance(d, datetime.date):
+                return d
+            wd = d.weekday()
+            if wd == 2:
+                return d
+            days_ahead = 2 - wd
+            if days_ahead <= 0:
+                days_ahead += 7
+            return d + datetime.timedelta(days_ahead)
+
+        cema_invoices = []
+        for idx, row in df_cema.iterrows():
+            if len(row) < 6:
+                continue
+            
+            nf_raw = str(row[1]).strip() # Col B (index 1)
+            date_raw = row[5] # Col F (index 5)
+            
+            if not nf_raw or nf_raw.lower() in ('nan', 'none', 'nota fiscal', 'nota', 'nota_fiscal'):
+                continue
+                
+            nf_clean = nf_raw.split('/')[0].strip()
+            
+            if not nf_clean:
+                continue
+                
+            if not any(char.isdigit() for char in nf_clean):
+                continue
+            
+            try:
+                nf_clean = str(int(float(nf_clean))).zfill(7)
+            except ValueError:
+                nf_clean = nf_clean.zfill(7)
+            
+            d_parsed = parse_date(date_raw)
+            d_adjusted = get_next_wednesday(d_parsed) if d_parsed else date_raw
+            
+            cema_invoices.append({
+                'raw_nf': nf_raw,
+                'nf': nf_clean,
+                'prorrogacao': d_adjusted
+            })
+            
+        if not cema_invoices:
+            raise HTTPException(status_code=400, detail="Nenhuma nota fiscal encontrada no arquivo Cema.")
+
+        # 2. Parse ACR File
+        acr_bytes = await acr_file.read()
+        try:
+            df_acr = pd.read_excel(io.BytesIO(acr_bytes), header=None)
+        except Exception:
+            acr_text = acr_bytes.decode('utf-8', errors='ignore')
+            sep = ';' if ';' in acr_text else ','
+            df_acr = pd.read_csv(io.StringIO(acr_text), sep=sep, header=None)
+            
+        acr_data_by_int = {}
+        for idx, row in df_acr.iterrows():
+            if len(row) < 16:
+                continue
+                
+            # For Cema, just extract Nota (Col D / index 3) and Vencimento (Col P / index 15)
+            # Remove strict 104, DP, and Parcela filters which could cause "Não encontrado"
+            val_d_raw = str(row[3]).strip()
+            if not val_d_raw or val_d_raw.lower() in ('nan', 'none'):
+                continue
+                
+            val_d = val_d_raw.split('.')[0]
+            val_p = str(row[15]).strip()
+            if ' ' in val_p:
+                val_p = val_p.split()[0]
+                
+            try:
+                acr_data_by_int[int(val_d)] = parse_date(val_p) or val_p
+            except ValueError:
+                continue
+                
+        # 3. Create Excel
+        def format_date_to_br(d):
+            if isinstance(d, datetime.date):
+                return d.strftime('%d/%m/%Y')
+            return str(d) if d else ""
+
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = "Prorrogações Cema"
+        ws1.views.sheetView[0].showGridLines = True
+        
+        ws1.cell(row=1, column=1, value="Nota Fiscal")
+        ws1.cell(row=1, column=2, value="Data de Prorrogação")
+        
+        for i, inv in enumerate(cema_invoices):
+            ws1.cell(row=i+2, column=1, value=inv['nf'])
+            ws1.cell(row=i+2, column=2, value=format_date_to_br(inv['prorrogacao']))
+            
+        ws2 = wb.create_sheet(title="Conciliação")
+        ws2.views.sheetView[0].showGridLines = True
+        ws2.cell(row=1, column=1, value="Nota Fiscal")
+        ws2.cell(row=1, column=2, value="Data Cema (Prorrogação)")
+        ws2.cell(row=1, column=3, value="Data ACR (Vencimento)")
+        ws2.cell(row=1, column=4, value="Status")
+        
+        font_header = Font(name='Calibri', size=11, bold=True)
+        font_body = Font(name='Calibri', size=11, bold=False)
+        align_left = Alignment(horizontal='left', vertical='center')
+        align_center = Alignment(horizontal='center', vertical='center')
+        
+        fill_ok = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        fill_div = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+        
+        for col_idx in [1, 2]:
+            cell = ws1.cell(row=1, column=col_idx)
+            cell.font = font_header
+            cell.alignment = align_left
+            
+        for r_idx in range(2, len(cema_invoices) + 2):
+            ws1.cell(row=r_idx, column=1).font = font_body
+            ws1.cell(row=r_idx, column=1).number_format = '@'
+            ws1.cell(row=r_idx, column=1).alignment = align_left
+            ws1.cell(row=r_idx, column=2).font = font_body
+            ws1.cell(row=r_idx, column=2).alignment = align_center
+            
+        ws1.column_dimensions['A'].width = 16
+        ws1.column_dimensions['B'].width = 24
+        
+        for i, inv in enumerate(cema_invoices):
+            row_num = i + 2
+            nf_str = inv['nf']
+            d_cema = inv['prorrogacao']
+            
+            try:
+                nf_int = int(nf_str)
+            except ValueError:
+                nf_int = None
+                
+            d_acr = None
+            status = "Não encontrado no CSV"
+            status_fill = None
+            
+            if nf_int is not None and nf_int in acr_data_by_int:
+                d_acr = acr_data_by_int[nf_int]
+                
+                if isinstance(d_cema, datetime.date) and isinstance(d_acr, datetime.date):
+                    if d_cema == d_acr:
+                        status = "OK"
+                        status_fill = fill_ok
+                    else:
+                        status = "Divergente"
+                        status_fill = fill_div
+                else:
+                    if str(d_cema).strip() == str(d_acr).strip():
+                        status = "OK"
+                        status_fill = fill_ok
+                    else:
+                        status = "Divergente"
+                        status_fill = fill_div
+                        
+            ws2.cell(row=row_num, column=1, value=nf_str)
+            ws2.cell(row=row_num, column=2, value=format_date_to_br(d_cema))
+            ws2.cell(row=row_num, column=3, value=format_date_to_br(d_acr))
+            
+            status_cell = ws2.cell(row=row_num, column=4, value=status)
+            if status_fill:
+                status_cell.fill = status_fill
+                
+        for col_idx in [1, 2, 3, 4]:
+            cell = ws2.cell(row=1, column=col_idx)
+            cell.font = font_header
+            cell.alignment = align_left
+            
+        for r_idx in range(2, len(cema_invoices) + 2):
+            ws2.cell(row=r_idx, column=1).font = font_body
+            ws2.cell(row=r_idx, column=1).number_format = '@'
+            ws2.cell(row=r_idx, column=1).alignment = align_left
+            ws2.cell(row=r_idx, column=2).font = font_body
+            ws2.cell(row=r_idx, column=2).alignment = align_center
+            ws2.cell(row=r_idx, column=3).font = font_body
+            ws2.cell(row=r_idx, column=3).alignment = align_center
+            ws2.cell(row=r_idx, column=4).font = font_body
+            ws2.cell(row=r_idx, column=4).alignment = align_left
+            
+        ws2.column_dimensions['A'].width = 16
+        ws2.column_dimensions['B'].width = 24
+        ws2.column_dimensions['C'].width = 24
+        ws2.column_dimensions['D'].width = 24
+        
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        filename = cema_file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
+        
+        from app.services.importacao_service import ImportacaoService
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Cema")
+        
+        headers_response = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

@@ -21,25 +21,25 @@
       align-items: center;
       gap: 0.5rem;
       font-size: 0.85rem;
-      color: $white;
+      color: $gray-500;
 
       a {
-        color: $white;
+        color: $gray-500;
         text-decoration: none;
         transition: color $transition-base;
 
         &:hover {
-          color: $gray-900;
+          color: $primary;
         }
       }
 
       .separator {
-        color: $white;
+        color: $gray-400;
         font-size: 0.75rem;
       }
 
       &:last-child {
-        color: $gray-400;
+        color: $gray-900;
         font-weight: $font-weight-medium;
       }
     }

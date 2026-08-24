@@ -1,4 +1,4 @@
-import { Component, signal, ViewChild, ElementRef, inject } from '@angular/core';
+import { Component, signal, ViewChild, ElementRef, inject, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -7,6 +7,7 @@ import { ButtonComponent } from '../../shared/components/button/button.component
 import { ModalComponent } from '../../shared/components/modal/modal.component';
 import { LoadingComponent } from '../../shared/components/loading/loading.component';
 import { BadgeComponent } from '../../shared/components/badge/badge.component';
+import { ConfirmModalComponent } from '../../shared/components/confirm-modal/confirm-modal.component';
 import { ImportacoesService } from '../../core/services/importacoes.service';
 
 export interface MenuItem {
@@ -16,12 +17,13 @@ export interface MenuItem {
 }
 
 export interface ConciliacaoHistory {
+  id?: number;
   date: string;
   fileName: string;
   matchedCount: number;
   unmatchedCount: number;
   divergencesCount: number;
-  status: 'success' | 'warning' | 'failed';
+  status: 'success' | 'warning' | 'failed' | string;
   user: string;
 }
 
@@ -51,13 +53,69 @@ export interface ConferenciaItem {
     ButtonComponent,
     ModalComponent,
     LoadingComponent,
-    BadgeComponent
+    BadgeComponent,
+    ConfirmModalComponent
   ],
   templateUrl: './conciliacao-pagamentos.component.html',
   styleUrl: './conciliacao-pagamentos.component.scss'
 })
-export class ConciliacaoPagamentosComponent {
+export class ConciliacaoPagamentosComponent implements OnInit {
   private importacoesService = inject(ImportacoesService);
+
+  // Confirm/Alert Modal State
+  isConfirmModalOpen = false;
+  confirmTitle = '';
+  confirmMessage = '';
+  confirmText = 'Confirmar';
+  cancelText = 'Cancelar';
+  confirmVariant: 'danger' | 'primary' = 'primary';
+  showCancelConfirm = true;
+  confirmCallback: () => void = () => {};
+
+  openConfirmModal(title: string, message: string, onConfirm: () => void, variant: 'danger' | 'primary' = 'danger') {
+    this.confirmTitle = title;
+    this.confirmMessage = message;
+    this.confirmText = 'Confirmar';
+    this.cancelText = 'Cancelar';
+    this.confirmVariant = variant;
+    this.showCancelConfirm = true;
+    this.confirmCallback = onConfirm;
+    this.isConfirmModalOpen = true;
+  }
+
+  openAlert(title: string, message: string, variant: 'danger' | 'primary' = 'primary') {
+    this.confirmTitle = title;
+    this.confirmMessage = message;
+    this.confirmText = 'Ok';
+    this.cancelText = '';
+    this.confirmVariant = variant;
+    this.showCancelConfirm = false;
+    this.confirmCallback = () => this.closeConfirmModal();
+    this.isConfirmModalOpen = true;
+  }
+
+  closeConfirmModal() {
+    this.isConfirmModalOpen = false;
+  }
+
+  executeConfirm() {
+    this.confirmCallback();
+  }
+
+  extractErrorMessage(err: any): string {
+    if (err && err.error) {
+      if (typeof err.error.detail === 'string') {
+        return err.error.detail;
+      }
+      if (Array.isArray(err.error.detail)) {
+        return err.error.detail.map((d: any) => `${d.loc?.join('.') || ''}: ${d.msg}`).join('\n');
+      }
+      if (err.error.message) {
+        return err.error.message;
+      }
+    }
+    return err.message || 'Erro desconhecido no servidor';
+  }
 
   @ViewChild('apbFileInput') apbFileInput!: ElementRef<HTMLInputElement>;
   @ViewChild('bancoFileInput') bancoFileInput!: ElementRef<HTMLInputElement>;
@@ -65,15 +123,19 @@ export class ConciliacaoPagamentosComponent {
   // Sidebar Menu Selection
   activeMenu = signal<string>('dashboard');
 
-  // Menu Definition
-  analisesMenus = signal<MenuItem[]>([
-    { id: 'dashboard', label: 'Dashboard', icon: 'fa-solid fa-table-columns' },
-    { id: 'extratos', label: 'Extratos Bancários', icon: 'fa-solid fa-money-check-dollar' },
-    { id: 'relatorios', label: 'Relatórios de Fechamento', icon: 'fa-solid fa-chart-line' }
-  ]);
+  isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null
+    ? localStorage.getItem('sidebarCollapsed') === 'true'
+    : false;
 
-  administracaoMenus = signal<MenuItem[]>([
-    { id: 'conciliar', label: 'Executar Conciliação', icon: 'fa-solid fa-scale-balanced' }
+  toggleSidebar() {
+    this.isSidebarCollapsed = !this.isSidebarCollapsed;
+    localStorage.setItem('sidebarCollapsed', String(this.isSidebarCollapsed));
+  }
+
+  // Menu Definition
+  menus = signal<MenuItem[]>([
+    { id: 'dashboard', label: 'Dashboards', icon: 'fa-solid fa-table-columns' },
+    { id: 'conciliar', label: 'Conciliações', icon: 'fa-solid fa-scale-balanced' }
   ]);
 
   // Import State Variables
@@ -90,12 +152,86 @@ export class ConciliacaoPagamentosComponent {
   conferenciaItems = signal<ConferenciaItem[]>([]);
   isExporting = signal<boolean>(false);
 
+  // History Search
+  searchConciliacao = signal<string>('');
+
   // History List
-  conciliacaoHistory = signal<ConciliacaoHistory[]>([
-    { date: '20/08/2026 09:15', fileName: 'extrato_itau_20260819.ofx', matchedCount: 142, unmatchedCount: 4, divergencesCount: 1, status: 'warning', user: 'Ana Paula (Financeiro)' },
-    { date: '19/08/2026 15:40', fileName: 'extrato_bradesco_20260818.ofx', matchedCount: 98, unmatchedCount: 0, divergencesCount: 0, status: 'success', user: 'Ana Paula (Financeiro)' },
-    { date: '18/08/2026 11:22', fileName: 'extrato_bb_20260817.ofx', matchedCount: 215, unmatchedCount: 0, divergencesCount: 0, status: 'success', user: 'Carlos Silva (Gerente)' }
-  ]);
+  conciliacaoHistory = signal<ConciliacaoHistory[]>([]);
+
+  filteredConciliacaoHistory = computed(() => {
+    const term = this.searchConciliacao().toLowerCase().trim();
+    if (!term) return this.conciliacaoHistory();
+    return this.conciliacaoHistory().filter(h => 
+      h.fileName.toLowerCase().includes(term) ||
+      h.user.toLowerCase().includes(term) ||
+      h.date.toLowerCase().includes(term)
+    );
+  });
+
+  ngOnInit() {
+    this.carregarHistorico();
+  }
+
+  carregarHistorico() {
+    this.importacoesService.listar(1, 50, undefined, 'CONCILIACAO_BANCARIA').subscribe({
+      next: (res) => {
+        const mapped = (res.items || []).map((imp: any) => this.mapImportacaoToHistory(imp));
+        this.conciliacaoHistory.set(mapped);
+      },
+      error: (err) => console.error('Erro ao carregar historico de conciliações:', err)
+    });
+  }
+
+  mapImportacaoToHistory(imp: any): ConciliacaoHistory {
+    const parts = (imp.tipo || '').split('|');
+    const matchedCount = parts[1] ? parseInt(parts[1], 10) : 0;
+    const unmatchedCount = parts[2] ? parseInt(parts[2], 10) : 0;
+    const divergencesCount = parts[3] ? parseInt(parts[3], 10) : 0;
+    const status = parts[4] || 'success';
+    const user = parts[5] || 'Sistema';
+    
+    let dateStr = imp.createdAt;
+    try {
+      const d = new Date(imp.createdAt);
+      if (!isNaN(d.getTime())) {
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        dateStr = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    return {
+      id: imp.idImportacoes,
+      date: dateStr,
+      fileName: imp.nomeArquivo,
+      matchedCount,
+      unmatchedCount,
+      divergencesCount,
+      status,
+      user
+    };
+  }
+
+  excluirConciliacao(id: number) {
+    this.openConfirmModal(
+      'Confirmar Exclusão',
+      'Tem certeza que deseja excluir esta conciliação? Esta ação é irreversível.',
+      () => {
+        this.closeConfirmModal();
+        this.importacoesService.excluir(id).subscribe({
+          next: () => {
+            this.carregarHistorico();
+          },
+          error: (err) => {
+            console.error('Erro ao excluir conciliação', err);
+            this.openAlert('Erro', 'Não foi possível excluir o registro.', 'danger');
+          }
+        });
+      },
+      'danger'
+    );
+  }
 
   selectMenu(menuId: string) {
     this.activeMenu.set(menuId);
@@ -115,12 +251,29 @@ export class ConciliacaoPagamentosComponent {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       if (type === 'apb') {
-        this.selectedFileApb.set(input.files[0]);
+        const file = input.files[0];
+        this.selectedFileApb.set(file);
+        this.lerPlanilhaApb(file);
       } else {
         const filesArray = Array.from(input.files);
         this.selectedFilesBanco.update(existing => [...existing, ...filesArray]);
       }
     }
+  }
+
+  lerPlanilhaApb(file: File) {
+    this.importacoesService.lerApb(file).subscribe({
+      next: (res) => {
+        console.log('=== LISTA DE PESSOAS CONSOLIDADAS (PLANILHA APB) ===');
+        console.log(res.dados);
+        console.log('====================================================');
+      },
+      error: (err) => {
+        console.error('Erro ao ler a planilha APB:', err);
+        const detail = this.extractErrorMessage(err);
+        this.openAlert('Erro no Processamento', `Não foi possível processar a planilha APB:\n${detail}`, 'danger');
+      }
+    });
   }
 
   removeBancoFile(index: number) {
@@ -158,7 +311,7 @@ export class ConciliacaoPagamentosComponent {
           error: (err) => {
             this.isProcessing.set(false);
             console.error('Erro ao realizar conciliação:', err);
-            alert('Ocorreu um erro no processamento da conciliação. Verifique a chave de API e a integridade dos arquivos.');
+            this.openAlert('Erro', 'Ocorreu um erro no processamento da conciliação. Verifique a chave de API e a integridade dos arquivos.', 'danger');
           }
         });
       }, 1500);
@@ -205,8 +358,9 @@ export class ConciliacaoPagamentosComponent {
   confirmarEExportar() {
     this.isExporting.set(true);
     const dados = this.conferenciaItems();
+    const fileName = this.selectedFileApb()?.name || 'conciliacao.xlsx';
 
-    this.importacoesService.exportarConciliacao(dados).subscribe({
+    this.importacoesService.exportarConciliacao(dados, fileName).subscribe({
       next: (blob) => {
         this.isExporting.set(false);
         this.isConferenciaModalOpen.set(false);
@@ -221,27 +375,8 @@ export class ConciliacaoPagamentosComponent {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
 
-        // Compute metrics for history
-        const matched = dados.filter(d => d.status === 'conciliado').length;
-        const divergences = dados.filter(d => d.status === 'divergente').length;
-        const unmatched = dados.filter(d => d.status === 'nao_encontrado').length;
-
-        // Add item to history
-        const now = new Date();
-        const pad = (n: number) => n.toString().padStart(2, '0');
-        const dateStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-        
-        const newHistory: ConciliacaoHistory = {
-          date: dateStr,
-          fileName: this.selectedFileApb()?.name || 'conciliacao.xlsx',
-          matchedCount: matched,
-          unmatchedCount: unmatched,
-          divergencesCount: divergences,
-          status: divergences > 0 ? 'warning' : 'success',
-          user: 'Ana Paula (Financeiro)'
-        };
-
-        this.conciliacaoHistory.update(list => [newHistory, ...list]);
+        // Reload history
+        this.carregarHistorico();
 
         // Reset file selections
         this.selectedFileApb.set(null);
@@ -250,7 +385,7 @@ export class ConciliacaoPagamentosComponent {
       error: (err) => {
         this.isExporting.set(false);
         console.error('Erro ao exportar planilha:', err);
-        alert('Não foi possível exportar a planilha de conciliação.');
+        this.openAlert('Erro', 'Não foi possível exportar a planilha de conciliação.', 'danger');
       }
     });
   }

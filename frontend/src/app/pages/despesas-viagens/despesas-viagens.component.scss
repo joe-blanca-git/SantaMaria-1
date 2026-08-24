@@ -145,6 +145,7 @@
       margin-right: 0.75rem;
       font-size: 1.1rem;
       transition: margin 0.3s ease;
+      color: #cbd3df;
     }
 
     .nav-text {
@@ -156,12 +157,20 @@
     &:hover {
       background: rgba($gray-100, 0.6);
       color: $gray-900;
+      
+      i {
+        color: $gray-900;
+      }
     }
 
     &.active {
       background: rgba($primary, 0.08);
       color: $primary;
       font-weight: 600;
+
+      i {
+        color: $primary;
+      }
     }
   }
 }
@@ -1264,7 +1273,7 @@
     position: sticky;
     left: 0;
     z-index: 3;
-    background-color: $white;
+    background-color: var(--color-surface);
     box-shadow: 2px 0 5px rgba(0, 0, 0, 0.04);
   }
 
@@ -1273,24 +1282,107 @@
     position: sticky;
     right: 0;
     z-index: 3;
-    background-color: $white;
+    background-color: var(--color-surface);
     box-shadow: -2px 0 5px rgba(0, 0, 0, 0.04);
   }
 
   thead th.sticky-col-left,
   thead th.sticky-col-right {
     z-index: 4;
-    background-color: #f8fafc;
+    background-color: var(--color-bg);
   }
 
   tfoot tr td.sticky-col-left,
   tfoot tr td.sticky-col-right {
     z-index: 4;
-    background-color: #f8fafc;
+    background-color: var(--color-bg);
   }
 
   tbody tr:hover td.sticky-col-left,
   tbody tr:hover td.sticky-col-right {
-    background-color: rgba(248, 250, 252, 0.95);
+    background-color: var(--color-surface-hover);
+  }
+}
+
+// Estilo customizado para o modal de importação (conferência)
+.import-table-container,
+.import-table-action-bar,
+.import-table-footer {
+  background-color: var(--color-surface);
+  border-color: var(--color-border) !important;
+}
+
+:host-context([data-theme='dark']) {
+  .import-table-container,
+  .import-table-action-bar,
+  .import-table-footer {
+    background-color: #064663 !important;
+    border-color: #064663 !important;
+  }
+
+  ::ng-deep .import-modal-content-wrapper {
+    // Override backgrounds and borders of the table
+    .table-responsive {
+      border-color: #064663 !important;
+    }
+
+    .saas-table {
+      border-color: #064663 !important;
+
+      thead th, th {
+        background-color: #064663 !important;
+        border-color: #064663 !important;
+      }
+
+      tbody td, td {
+        border-color: #064663 !important;
+      }
+
+      tr {
+        border-color: #064663 !important;
+      }
+    }
+
+    // Override ng-select dropdown container background and border
+    .ng-select {
+      .ng-select-container {
+        background-color: #064663 !important;
+        border-color: #0077b3 !important;
+        color: #f8fafc !important;
+      }
+
+      &.ng-select-focused .ng-select-container {
+        border-color: #0077b3 !important;
+        box-shadow: none !important;
+      }
+    }
+
+    // Override form inputs inside the table
+    input.form-control {
+      background-color: #064663 !important;
+      border-color: #0077b3 !important;
+      color: #f8fafc !important;
+    }
+  }
+}
+
+// Estilo customizado para o container da tabela da aba Relatório
+.report-table-container {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+
+  .saas-table {
+    thead th, th {
+      background-color: var(--color-bg) !important;
+      border-bottom: 1px solid var(--color-border) !important;
+      color: var(--color-text-primary) !important;
+    }
+
+    tbody td, td {
+      border-bottom: 1px solid var(--color-border-light) !important;
+      color: var(--color-text-secondary) !important;
+    }
   }
 }

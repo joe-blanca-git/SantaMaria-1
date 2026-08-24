@@ -1,525 +1,434 @@
 <div class="page-container">
-  
+
   <!-- Page Header -->
-  <header class="page-header-premium">
+  <!-- <header class="page-header-premium">
     <div class="title-row">
       <div class="header-info">
-        <h1>Extratores</h1>
+        <h1 class="page-title">Extratores</h1>
         <span class="page-description">Configure e gerencie extratores de dados inteligentes para importação automatizada.</span>
       </div>
     </div>
-  </header>
+  </header> -->
 
-  <!-- Grid of 5 Extractors -->
-  <div class="content-wrapper">
-    <div class="extractors-grid">
-      @for (ext of extractors(); track ext.id) {
-        <app-card [padding]="true" class="extractor-card hover-lift" [class.sendas-bg-card]="ext.id === 'ext-ofx-pdf' || ext.id === 'ext-sendas-prorrogacao'" [class.atacadao-bg-card]="ext.id === 'ext-pdf-ia' || ext.id === 'ext-atacadao-prorrogacao'" [class.martminas-bg-card]="ext.id === 'ext-martminas-prorrogacao'" [class.savegnago-bg-card]="ext.id === 'ext-savegnago-prorrogacao'">
-          <div class="card-content">
-            <div class="card-header-row">
-              <div class="icon-wrap" [class]="ext.colorClass">
-                <i [class]="ext.icon"></i>
-              </div>
-              <app-badge [variant]="ext.statusVariant" [text]="ext.statusText"></app-badge>
+  <div class="main-layout">
+    <aside class="main-sidebar" [class.collapsed]="isSidebarCollapsed">
+      <div class="sidebar-header d-flex justify-content-end mb-3 pb-2 border-bottom">
+        <button class="btn btn-sm text-muted sidebar-toggle" (click)="toggleSidebar()"
+          style="background: transparent; border: none; padding: 0.25rem 0.5rem; border-radius: 6px;">
+          <i class="fa-solid" [ngClass]="isSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'"></i>
+        </button>
+      </div>
+      <ul class="main-nav">
+        <li>
+          <button class="main-nav-link" [class.active]="activeTab === 'composicoes'"
+            (click)="setActiveTab('composicoes')" title="Pagamentos">
+            <i class="fa-solid fa-file-invoice-dollar"></i> <span class="nav-text">Pagamentos</span>
+          </button>
+        </li>
+        <li>
+          <button class="main-nav-link" [class.active]="activeTab === 'prorrogacoes'"
+            (click)="setActiveTab('prorrogacoes')" title="Prorrogações">
+            <i class="fa-solid fa-clock-rotate-left"></i> <span class="nav-text">Prorrogações</span>
+          </button>
+        </li>
+      </ul>
+    </aside>
+
+    <main class="main-content">
+      <div class="tab-content custom-tab-content">
+
+        <!-- Tab: Composições -->
+        <div class="tab-pane fade" [class.show]="activeTab === 'composicoes'"
+          [class.active]="activeTab === 'composicoes'">
+          <div class="import-dashboard">
+
+            <div class="dashboard-section-header">
+              <h3>Pagamentos</h3>
+              <p>Importe os dados de pagamentos de cada supermercado.</p>
             </div>
-            <div class="info-wrap">
-              <h3>{{ ext.name }}</h3>
-              <p>{{ ext.description }}</p>
-            </div>
-            <div class="card-action-row mt-3">
-              @if (ext.id === 'ext-atacadao-prorrogacao') {
-                <div class="d-flex gap-2 w-100 justify-content-between">
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerProrrogacaoHtmlUpload()">
-                    <i class="fa-solid fa-file-code"></i>
-                    Atacadão
-                  </button>
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerProrrogacaoExcelUpload()">
-                    <i class="fa-solid fa-file-excel"></i>
-                    ACR
-                  </button>
+
+            <div class="companies-grid">
+              @for (ext of getComposicoesExtractors(); track ext.id) {
+              <div class="company-card">
+                <div class="company-info">
+                  <div class="company-icon" [class]="ext.colorClass" [style.padding]="ext.logo ? '4px' : ''"
+                    [style.background]="ext.logo ? 'white' : ''">
+                    @if (ext.logo) { <img [src]="ext.logo" alt="{{ ext.name }}"
+                      style="max-width: 100%; max-height: 100%; object-fit: contain;"> } @else { <i
+                      [class]="ext.icon"></i> }
+                  </div>
+                  <span class="company-name">{{ ext.name }}</span>
                 </div>
-              } @else if (ext.id === 'ext-sendas-prorrogacao') {
-                <div class="d-flex gap-2 w-100 justify-content-between">
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerSendasProrrogacaoUpload()">
-                    <i class="fa-solid fa-file-excel"></i>
-                    Sendas
-                  </button>
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerAcrProrrogacaoUpload()">
-                    <i class="fa-solid fa-file-excel"></i>
-                    ACR
-                  </button>
-                </div>
-              } @else if (ext.id === 'ext-martminas-prorrogacao') {
-                <div class="d-flex gap-2 w-100 justify-content-between">
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerMartminasProrrogacaoUpload()">
-                    <i class="fa-solid fa-file-excel"></i>
-                    Mart Minas
-                  </button>
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerAcrMartminasProrrogacaoUpload()">
-                    <i class="fa-solid fa-file-excel"></i>
-                    ACR
-                  </button>
-                </div>
-              } @else if (ext.id === 'ext-savegnago-prorrogacao') {
-                <div class="d-flex gap-2 w-100 justify-content-between">
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerSavegnagoProrrogacaoUpload()">
-                    <i class="fa-solid fa-file-excel"></i>
-                    Savegnago
-                  </button>
-                  <button 
-                    class="btn btn-primary btn-sm flex-fill d-flex align-items-center justify-content-center gap-2"
-                    (click)="triggerAcrSavegnagoProrrogacaoUpload()">
-                    <i class="fa-solid fa-file-excel"></i>
-                    ACR
-                  </button>
-                </div>
-              } @else {
-                <app-button 
-                  [variant]="ext.status === 'active' ? 'primary' : 'secondary'" 
-                  size="sm" 
-                  [disabled]="ext.status !== 'active'"
-                  icon="fa-solid fa-cloud-arrow-up"
-                  (clicked)="ext.id === 'ext-pdf-ia' ? triggerAtacadaoUpload() : (ext.id === 'ext-ofx-pdf' ? triggerSendasUpload() : null)">
-                  Importar dados
+                <app-button variant="ghost" size="sm" icon="fa-solid fa-cloud-arrow-up"
+                  (clicked)="openComposicaoModal(ext)">
+                  Importar
                 </app-button>
+              </div>
               }
             </div>
+
+            <div class="section-header d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h3>Histórico de Importações</h3>
+                <p>Acompanhe os arquivos processados recentemente.</p>
+              </div>
+              <div class="search-box" style="max-width: 300px; width: 100%;">
+                <i class="fa-solid fa-search text-muted"></i>
+                <input type="text" placeholder="Buscar importação...">
+              </div>
+            </div>
+
+            <div class="table-card">
+              <div class="table-responsive">
+                <table class="saas-table">
+                  <thead>
+                    <tr>
+                      <th>Nome do Arquivo</th>
+                      <th>Empresa</th>
+                      <th>Tipo</th>
+                      <th>Data</th>
+                      <th class="text-end">Valor Total</th>
+                      <th class="text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of historicoComposicoes(); track item.idImportacoes) {
+                    <tr>
+                      <td>
+                        <div class="file-cell">
+                          <i class="fa-regular fa-file-excel excel-icon"></i>
+                          <span>{{ item.nomeArquivo }}</span>
+                        </div>
+                      </td>
+                      <td>{{ item.empresa?.nome || item.tipo.split(' - ')[1] || '-' }}</td>
+                      <td><span class="company-badge">{{ item.tipo }}</span></td>
+                      <td>{{ item.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                      <td class="text-end amount-cell">{{ item.valor_total ? (item.valor_total | currency:'BRL') : '-'
+                        }}</td>
+                      <td>
+                        <div class="actions-cell justify-content-center">
+                          <button class="action-btn delete-btn" title="Excluir"
+                            (click)="confirmarExclusao(item.idImportacoes, $event)">
+                            <i class="fa-solid fa-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    }
+                    @if (historicoComposicoes().length === 0) {
+                    <tr>
+                      <td colspan="6" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
+                    </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
           </div>
-        </app-card>
-      }
-    </div>
+        </div>
+
+        <!-- Tab: Prorrogações -->
+        <div class="tab-pane fade" [class.show]="activeTab === 'prorrogacoes'"
+          [class.active]="activeTab === 'prorrogacoes'">
+          <div class="import-dashboard">
+
+            <div class="dashboard-section-header">
+              <h3>Prorrogações</h3>
+              <p>Importe e concilie os dados de prorrogações de cada supermercado.</p>
+            </div>
+
+            <div class="companies-grid">
+              @for (ext of getProrrogacoesExtractors(); track ext.id) {
+              <div class="company-card">
+                <div class="company-info">
+                  <div class="company-icon" [class]="ext.colorClass" [style.padding]="ext.logo ? '4px' : ''"
+                    [style.background]="ext.logo ? 'white' : ''">
+                    @if (ext.logo) { <img [src]="ext.logo" alt="{{ ext.name }}"
+                      style="max-width: 100%; max-height: 100%; object-fit: contain;"> } @else { <i
+                      [class]="ext.icon"></i> }
+                  </div>
+                  <span class="company-name">{{ ext.name }}</span>
+                </div>
+                <app-button variant="ghost" size="sm" icon="fa-solid fa-cloud-arrow-up"
+                  (clicked)="openProrrogacaoModal(ext)">
+                  Importar
+                </app-button>
+              </div>
+              }
+            </div>
+
+            <div class="section-header d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h3>Histórico de Prorrogações</h3>
+                <p>Acompanhe os arquivos processados recentemente.</p>
+              </div>
+              <div class="search-box" style="max-width: 300px; width: 100%;">
+                <i class="fa-solid fa-search text-muted"></i>
+                <input type="text" placeholder="Buscar prorrogação...">
+              </div>
+            </div>
+
+            <div class="table-card">
+              <div class="table-responsive">
+                <table class="saas-table">
+                  <thead>
+                    <tr>
+                      <th>Nome do Arquivo</th>
+                      <th>Empresa</th>
+                      <th>Tipo</th>
+                      <th>Data</th>
+                      <th class="text-end">Valor Total</th>
+                      <th class="text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of historicoProrrogacoes(); track item.idImportacoes) {
+                    <tr>
+                      <td>
+                        <div class="file-cell">
+                          <i class="fa-regular fa-file-excel excel-icon"></i>
+                          <span>{{ item.nomeArquivo }}</span>
+                        </div>
+                      </td>
+                      <td>{{ item.empresa?.nome || item.tipo.split(' - ')[1] || '-' }}</td>
+                      <td><span class="company-badge">{{ item.tipo }}</span></td>
+                      <td>{{ item.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                      <td class="text-end amount-cell">{{ item.valor_total ? (item.valor_total | currency:'BRL') : '-'
+                        }}</td>
+                      <td>
+                        <div class="actions-cell justify-content-center">
+                          <button class="action-btn delete-btn" title="Excluir"
+                            (click)="confirmarExclusao(item.idImportacoes, $event)">
+                            <i class="fa-solid fa-trash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    }
+                    @if (historicoProrrogacoes().length === 0) {
+                    <tr>
+                      <td colspan="6" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
+                    </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </main>
   </div>
 
-  <!-- Hidden Input for Atacadão File Selector (.html only) -->
-  <input type="file" #atacadaoFileInput style="display: none;" accept=".html, .htm" (change)="onAtacadaoFileSelected($event)">
+  <!-- Hidden Inputs for unified Composicao modal -->
+  <input type="file" #composicaoEmpresaFileInput style="display: none;"
+    [accept]="composicaoExtSelecionado?.id === 'ext-pdf-ia' ? '.html, .htm' : '.xlsx, .xls'"
+    (change)="onComposicaoEmpresaFileSelected($event)">
+  <input type="file" #composicaoAcrFileInput style="display: none;" accept=".xlsx, .xls"
+    (change)="onComposicaoAcrFileSelected($event)">
 
-  <!-- Hidden Input for Sendas File Selector (.xlsx, .xls only) -->
-  <input type="file" #sendasFileInput style="display: none;" accept=".xlsx, .xls" (change)="onSendasFileSelected($event)">
+  <app-modal [isOpen]="isComposicaoUnifiedModalOpen"
+    [title]="'Processar Pagamento - ' + (composicaoExtSelecionado?.name || '')" size="lg"
+    (closed)="closeComposicaoModal()">
+    <div class="prorrogacao-modal-content">
 
-  <!-- Modal feedback for successful Atacadão HTML file select -->
-  <app-modal [isOpen]="isSuccessModalOpen()" title="Processar Composição de Pagamento" size="sm" (closed)="!isProcessing() ? isSuccessModalOpen.set(false) : null">
-    <div class="text-center py-3">
-      
-      @if (isProcessing()) {
-        <div class="processing-spinner mb-3">
-          <app-loading type="spinner" size="lg"></app-loading>
-        </div>
-        <h4 class="mb-2">Processando arquivo...</h4>
-        <p class="text-muted small">Extraindo os dados do HTML e gerando o arquivo Excel. Por favor, aguarde.</p>
-      }
-      
-      @else if (processingError() !== '') {
-        <div class="text-danger mb-3">
-          <i class="fa-solid fa-circle-xmark fs-1"></i>
-        </div>
-        <h4 class="mb-2 text-danger">Falha no Processamento</h4>
-        <p class="text-muted small">{{ processingError() }}</p>
-        <div class="mt-4">
-          <app-button variant="secondary" (clicked)="isSuccessModalOpen.set(false)">
-            Fechar
-          </app-button>
-        </div>
-      }
-      
-      @else {
-        <div class="text-primary mb-3">
-          <i class="fa-regular fa-file-code fs-1"></i>
-        </div>
-        <h4 class="mb-2">Atacadão</h4>
-        <p class="text-muted small">
-          Arquivo carregado: <strong>{{ atacadaoFile()?.name }}</strong>.
-        </p>
-        <p class="text-muted small">
-          Clique em <strong>Processar</strong> para extrair as colunas selecionadas para uma planilha Excel.
-        </p>
-        <div class="mt-4 d-flex justify-content-center gap-2">
-          <app-button variant="secondary" (clicked)="isSuccessModalOpen.set(false)">
-            Cancelar
-          </app-button>
-          <app-button variant="primary" (clicked)="processAtacadaoFile()">
-            Processar
-          </app-button>
-        </div>
-      }
-
-    </div>
-  </app-modal>
-
-  <!-- Modal feedback for successful Sendas Excel file select -->
-  <app-modal [isOpen]="isSendasModalOpen()" title="Processar Composição de Pagamento - Sendas" size="sm" (closed)="!isSendasProcessing() ? isSendasModalOpen.set(false) : null">
-    <div class="text-center py-3">
-      
-      @if (isSendasProcessing()) {
-        <div class="processing-spinner mb-3">
-          <app-loading type="spinner" size="lg"></app-loading>
-        </div>
-        <h4 class="mb-2">Processando arquivo...</h4>
-        <p class="text-muted small">Carregando planilha Excel e aplicando filtros de extração. Por favor, aguarde.</p>
-      }
-      
-      @else if (sendasError() !== '') {
-        <div class="text-danger mb-3">
-          <i class="fa-solid fa-circle-xmark fs-1"></i>
-        </div>
-        <h4 class="mb-2 text-danger">Falha no Processamento</h4>
-        <p class="text-muted small">{{ sendasError() }}</p>
-        <div class="mt-4">
-          <app-button variant="secondary" (clicked)="isSendasModalOpen.set(false)">
-            Fechar
-          </app-button>
-        </div>
-      }
-      
-      @else {
-        <div class="text-success mb-3">
-          <i class="fa-regular fa-file-excel fs-1"></i>
-        </div>
-        <h4 class="mb-2">Sendas</h4>
-        <p class="text-muted small">
-          Planilha carregada: <strong>{{ sendasFile()?.name }}</strong>.
-        </p>
-        <p class="text-muted small">
-          O processamento aplicará filtros específicos na composição de pagamento e gerará um novo Excel.
-        </p>
-        <div class="mt-4 d-flex justify-content-center gap-2">
-          <app-button variant="secondary" (clicked)="isSendasModalOpen.set(false)">
-            Cancelar
-          </app-button>
-          <app-button variant="primary" (clicked)="processSendasFile()">
-            Processar
-          </app-button>
-        </div>
-      }
-
-    </div>
-  </app-modal>
-  <!-- Hidden Inputs for Prorrogação File Selector -->
-  <input type="file" #prorrogacaoHtmlInput style="display: none;" accept=".html, .htm" (change)="onProrrogacaoHtmlSelected($event)">
-  <input type="file" #prorrogacaoExcelInput style="display: none;" accept=".xlsx, .xls" (change)="onProrrogacaoExcelSelected($event)">
-
-  <!-- Modal feedback for successful Prorrogação file select -->
-  <app-modal [isOpen]="isProrrogacaoModalOpen()" title="Processar Prorrogação - Atacadão" size="sm" (closed)="!isProrrogacaoProcessing() ? isProrrogacaoModalOpen.set(false) : null">
-    <div class="text-center py-3">
-      
-      @if (isProrrogacaoProcessing()) {
-        <div class="processing-spinner mb-3">
-          <app-loading type="spinner" size="lg"></app-loading>
-        </div>
-        <h4 class="mb-2">Processando arquivo...</h4>
-        <p class="text-muted small">Carregando arquivo de prorrogação e extraindo os dados. Por favor, aguarde.</p>
-      }
-      
-      @else if (prorrogacaoError() !== '') {
-        <div class="text-danger mb-3">
-          <i class="fa-solid fa-circle-xmark fs-1"></i>
-        </div>
-        <h4 class="mb-2 text-danger">Falha no Processamento</h4>
-        <p class="text-muted small">{{ prorrogacaoError() }}</p>
-        <div class="mt-4">
-          <app-button variant="secondary" (clicked)="isProrrogacaoModalOpen.set(false)">
-            Fechar
-          </app-button>
-        </div>
-      }
-      
-      @else {
-        <div class="mb-3 d-flex justify-content-center gap-4">
-          <div class="text-center">
-            <i class="fa-regular fa-file-code fs-1" [class.text-primary]="prorrogacaoHtmlFile()" [class.text-muted]="!prorrogacaoHtmlFile()"></i>
-            <div class="small mt-1">HTML</div>
-          </div>
-          <div class="text-center">
-            <i class="fa-regular fa-file-excel fs-1" [class.text-success]="prorrogacaoExcelFile()" [class.text-muted]="!prorrogacaoExcelFile()"></i>
-            <div class="small mt-1">Excel/CSV</div>
-          </div>
-        </div>
-        
-        <h4 class="mb-2">Atacadão - Prorrogação</h4>
-        
-        <div class="text-start px-3 py-2 bg-light rounded mb-3 small" style="font-size: 13px;">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <span><strong>Arquivo HTML:</strong></span>
-            @if (prorrogacaoHtmlFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ prorrogacaoHtmlFile()?.name }}</span>
-            } @else {
-              <span class="text-danger">Pendente (Clique no botão HTML)</span>
-            }
-          </div>
-          <div class="d-flex justify-content-between align-items-center">
-            <span><strong>Arquivo CSV:</strong></span>
-            @if (prorrogacaoExcelFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ prorrogacaoExcelFile()?.name }}</span>
-            } @else {
-              <span class="text-danger">Pendente (Clique no botão Excel)</span>
-            }
-          </div>
-        </div>
-
-        <p class="text-muted small">
-          Ambos os arquivos são necessários. Clique em <strong>Processar</strong> para realizar a conciliação automática das datas de prorrogação e gerar o relatório consolidado.
-        </p>
-        
-        <div class="mt-4 d-flex justify-content-center gap-2">
-          <app-button variant="secondary" (clicked)="isProrrogacaoModalOpen.set(false)">
-            Cancelar
-          </app-button>
-          <app-button variant="primary" [disabled]="!prorrogacaoHtmlFile() || !prorrogacaoExcelFile()" (clicked)="processProrrogacaoFile()">
-            Processar
-          </app-button>
-        </div>
-      }
-
-    </div>
-  </app-modal>
-
-  <!-- Hidden Inputs for Sendas Prorrogação File Selector -->
-  <input type="file" #sendasProrrogacaoInput style="display: none;" accept=".xlsx, .xls" (change)="onSendasProrrogacaoSelected($event)">
-  <input type="file" #acrProrrogacaoInput style="display: none;" accept=".xlsx, .xls" (change)="onAcrProrrogacaoSelected($event)">
-
-  <!-- Modal feedback for successful Sendas Prorrogação file select -->
-  <app-modal [isOpen]="isSendasProrrogacaoModalOpen()" title="Processar Prorrogação - Sendas" size="sm" (closed)="!isSendasProrrogacaoProcessing() ? isSendasProrrogacaoModalOpen.set(false) : null">
-    <div class="text-center py-3">
-      
-      @if (isSendasProrrogacaoProcessing()) {
+      @if (isComposicaoUnifiedProcessing()) {
+      <div class="text-center py-5">
         <div class="processing-spinner mb-3">
           <app-loading type="spinner" size="lg"></app-loading>
         </div>
         <h4 class="mb-2">Processando arquivos...</h4>
-        <p class="text-muted small">Carregando planilhas de prorrogação e extraindo os dados. Por favor, aguarde.</p>
+        <p class="text-muted small">Carregando arquivos e realizando a extração e conciliação. Por favor, aguarde.</p>
+      </div>
       }
-      
-      @else if (sendasProrrogacaoError() !== '') {
+
+      @else if (composicaoUnifiedError() !== '') {
+      <div class="text-center py-5">
         <div class="text-danger mb-3">
           <i class="fa-solid fa-circle-xmark fs-1"></i>
         </div>
         <h4 class="mb-2 text-danger">Falha no Processamento</h4>
-        <p class="text-muted small">{{ sendasProrrogacaoError() }}</p>
+        <p class="text-muted small">{{ composicaoUnifiedError() }}</p>
         <div class="mt-4">
-          <app-button variant="secondary" (clicked)="isSendasProrrogacaoModalOpen.set(false)">
+          <app-button variant="secondary" (clicked)="closeComposicaoModal()">
             Fechar
           </app-button>
         </div>
+      </div>
       }
-      
+
       @else {
-        <div class="mb-3 d-flex justify-content-center gap-4">
-          <div class="text-center">
-            <i class="fa-regular fa-file-excel fs-1" [class.text-success]="sendasProrrogacaoFile()" [class.text-muted]="!sendasProrrogacaoFile()"></i>
-            <div class="small mt-1">Sendas</div>
+      <div class="upload-split-layout">
+        <!-- Lado Esquerdo: Arquivo da Empresa -->
+        <div class="upload-split-side">
+          <div class="upload-split-label">
+            <i class="fa-solid fa-building me-2"></i>
+            Arquivo {{ composicaoExtSelecionado?.name }}
           </div>
-          <div class="text-center">
-            <i class="fa-regular fa-file-excel fs-1" [class.text-success]="acrProrrogacaoFile()" [class.text-muted]="!acrProrrogacaoFile()"></i>
-            <div class="small mt-1">ACR</div>
-          </div>
-        </div>
-        
-        <h4 class="mb-2">Sendas - Prorrogação</h4>
-        
-        <div class="text-start px-3 py-2 bg-light rounded mb-3 small" style="font-size: 13px;">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <span><strong>Arquivo Sendas:</strong></span>
-            @if (sendasProrrogacaoFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ sendasProrrogacaoFile()?.name }}</span>
+          <div class="upload-zone" (click)="triggerComposicaoEmpresaFileInput()">
+            @if (composicaoEmpresaFile()) {
+            <i class="fa-solid fa-file-circle-check upload-icon text-success"></i>
+            <h4 class="text-success small fw-semibold">{{ composicaoEmpresaFile()?.name }}</h4>
+            <p class="text-muted small">Clique para trocar o arquivo</p>
             } @else {
-              <span class="text-danger">Pendente (Clique no botão Sendas)</span>
-            }
-          </div>
-          <div class="d-flex justify-content-between align-items-center">
-            <span><strong>Arquivo ACR:</strong></span>
-            @if (acrProrrogacaoFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ acrProrrogacaoFile()?.name }}</span>
-            } @else {
-              <span class="text-danger">Pendente (Clique no botão ACR)</span>
+            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+            <h4>Clique para selecionar</h4>
+            <p class="text-muted small">
+              {{ composicaoExtSelecionado?.id === 'ext-pdf-ia' ? 'Arquivo HTML (.html, .htm)' : 'Planilha Excel (.xlsx,
+              .xls)' }}
+            </p>
             }
           </div>
         </div>
 
-        <p class="text-muted small">
-          Ambas as planilhas são necessárias. Clique em <strong>Processar</strong> para realizar a conciliação das datas de prorrogação e gerar o relatório consolidado.
-        </p>
-        
-        <div class="mt-4 d-flex justify-content-center gap-2">
-          <app-button variant="secondary" (clicked)="isSendasProrrogacaoModalOpen.set(false)">
-            Cancelar
-          </app-button>
-          <app-button variant="primary" [disabled]="!sendasProrrogacaoFile() || !acrProrrogacaoFile()" (clicked)="processSendasProrrogacao()">
-            Processar
+        <!-- Divisor Vertical -->
+        <div class="upload-split-divider">
+          <div class="divider-line"></div>
+          <span class="divider-text">e</span>
+          <div class="divider-line"></div>
+        </div>
+
+        <!-- Lado Direito: Arquivo ACR -->
+        <div class="upload-split-side">
+          <div class="upload-split-label">
+            <i class="fa-solid fa-file-excel me-2"></i>
+            Arquivo ACR
+          </div>
+          <div class="upload-zone" (click)="triggerComposicaoAcrFileInput()">
+            @if (composicaoAcrFile()) {
+            <i class="fa-solid fa-file-circle-check upload-icon text-success"></i>
+            <h4 class="text-success small fw-semibold">{{ composicaoAcrFile()?.name }}</h4>
+            <p class="text-muted small">Clique para trocar o arquivo</p>
+            } @else {
+            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+            <h4>Clique para selecionar</h4>
+            <p class="text-muted small">Planilha Excel (.xlsx, .xls)</p>
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+        <app-button variant="ghost" (clicked)="closeComposicaoModal()">Cancelar</app-button>
+        <app-button variant="primary" [disabled]="!composicaoEmpresaFile() || !composicaoAcrFile()"
+          (clicked)="processComposicaoUnified()">Processar</app-button>
+      </div>
+      }
+
+    </div>
+  </app-modal>
+  <!-- Hidden Inputs for unified prorrogação modal -->
+  <input type="file" #prorrogacaoEmpresaFileInput style="display: none;" [accept]="getEmpresaFileAccept()"
+    (change)="onProrrogacaoEmpresaFileChange($event)">
+  <input type="file" #prorrogacaoAcrFileInput style="display: none;" accept=".xlsx, .xls"
+    (change)="onProrrogacaoAcrFileChange($event)">
+
+  <!-- Modal Unificado de Prorrogação -->
+  <app-modal [isOpen]="isProrrogacaoUnifiedModalOpen"
+    [title]="'Processar Prorrogação - ' + (prorrogacaoExtSelecionado?.name || '')" size="lg"
+    (closed)="closeProrrogacaoModal()">
+    <div class="prorrogacao-modal-content">
+
+      @if (isProrrogacaoUnifiedProcessing()) {
+      <div class="text-center py-5">
+        <div class="processing-spinner mb-3">
+          <app-loading type="spinner" size="lg"></app-loading>
+        </div>
+        <h4 class="mb-2">Processando arquivos...</h4>
+        <p class="text-muted small">Carregando arquivos e realizando a conciliação. Por favor, aguarde.</p>
+      </div>
+      }
+
+      @else if (prorrogacaoUnifiedError() !== '') {
+      <div class="text-center py-5">
+        <div class="text-danger mb-3">
+          <i class="fa-solid fa-circle-xmark fs-1"></i>
+        </div>
+        <h4 class="mb-2 text-danger">Falha no Processamento</h4>
+        <p class="text-muted small">{{ prorrogacaoUnifiedError() }}</p>
+        <div class="mt-4">
+          <app-button variant="secondary" (clicked)="closeProrrogacaoModal()">
+            Fechar
           </app-button>
         </div>
+      </div>
+      }
+
+      @else {
+      <div class="upload-split-layout">
+        <!-- Lado Esquerdo: Arquivo da Empresa -->
+        <div class="upload-split-side">
+          <div class="upload-split-label">
+            <i class="fa-solid fa-building me-2"></i>
+            Arquivo {{ prorrogacaoExtSelecionado?.name }}
+          </div>
+          <div class="upload-zone" (click)="triggerProrrogacaoEmpresaFileInput()">
+            @if (prorrogacaoEmpresaFile()) {
+            <i class="fa-solid fa-file-circle-check upload-icon text-success"></i>
+            <h4 class="text-success small fw-semibold">{{ prorrogacaoEmpresaFile()?.name }}</h4>
+            <p class="text-muted small">Clique para trocar o arquivo</p>
+            } @else {
+            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+            <h4>Clique para selecionar</h4>
+            <p class="text-muted small">
+              {{ prorrogacaoExtSelecionado?.id === 'ext-atacadao-prorrogacao' ? 'Arquivo HTML (.html, .htm)' : 'Planilha
+              Excel (.xlsx, .xls)' }}
+            </p>
+            }
+          </div>
+        </div>
+
+        <!-- Divisor Vertical -->
+        <div class="upload-split-divider">
+          <div class="divider-line"></div>
+          <span class="divider-text">e</span>
+          <div class="divider-line"></div>
+        </div>
+
+        <!-- Lado Direito: Arquivo ACR -->
+        <div class="upload-split-side">
+          <div class="upload-split-label">
+            <i class="fa-solid fa-file-excel me-2"></i>
+            Arquivo ACR
+          </div>
+          <div class="upload-zone" (click)="triggerProrrogacaoAcrFileInput()">
+            @if (prorrogacaoAcrFile()) {
+            <i class="fa-solid fa-file-circle-check upload-icon text-success"></i>
+            <h4 class="text-success small fw-semibold">{{ prorrogacaoAcrFile()?.name }}</h4>
+            <p class="text-muted small">Clique para trocar o arquivo</p>
+            } @else {
+            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+            <h4>Clique para selecionar</h4>
+            <p class="text-muted small">Planilha Excel (.xlsx, .xls)</p>
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+        <app-button variant="ghost" (clicked)="closeProrrogacaoModal()">Cancelar</app-button>
+        <app-button variant="primary" [disabled]="!prorrogacaoEmpresaFile() || !prorrogacaoAcrFile()"
+          (clicked)="processProrrogacaoUnified()">Processar</app-button>
+      </div>
       }
 
     </div>
   </app-modal>
 
-  <!-- Hidden Inputs for Mart Minas Prorrogação File Selector -->
-  <input type="file" #martminasProrrogacaoInput style="display: none;" accept=".xlsx, .xls" (change)="onMartminasProrrogacaoSelected($event)">
-  <input type="file" #acrMartminasProrrogacaoInput style="display: none;" accept=".xlsx, .xls" (change)="onAcrMartminasProrrogacaoSelected($event)">
+  <!-- Modal de Confirmação de Exclusão -->
+  <app-modal [isOpen]="isDeleteModalOpen()" title="Confirmar Exclusão" size="sm" (closed)="cancelarExclusao()">
+    <div class="text-center py-4">
+      <i class="fa-solid fa-triangle-exclamation text-danger mb-3" style="font-size: 2.5rem;"></i>
+      <h5 class="mb-3">Deseja excluir este histórico?</h5>
+      <p class="text-muted mb-4">Esta ação não poderá ser desfeita.</p>
 
-  <!-- Modal feedback for successful Mart Minas Prorrogação file select -->
-  <app-modal [isOpen]="isMartminasProrrogacaoModalOpen()" title="Processar Prorrogação - Mart Minas" size="sm" (closed)="!isMartminasProrrogacaoProcessing() ? isMartminasProrrogacaoModalOpen.set(false) : null">
-    <div class="text-center py-3">
-      
-      @if (isMartminasProrrogacaoProcessing()) {
-        <div class="processing-spinner mb-3">
-          <app-loading type="spinner" size="lg"></app-loading>
-        </div>
-        <h4 class="mb-2">Processando arquivos...</h4>
-        <p class="text-muted small">Carregando planilhas de prorrogação e extraindo os dados. Por favor, aguarde.</p>
-      }
-      
-      @else if (martminasProrrogacaoError() !== '') {
-        <div class="text-danger mb-3">
-          <i class="fa-solid fa-circle-xmark fs-1"></i>
-        </div>
-        <h4 class="mb-2 text-danger">Falha no Processamento</h4>
-        <p class="text-muted small">{{ martminasProrrogacaoError() }}</p>
-        <div class="mt-4">
-          <app-button variant="secondary" (clicked)="isMartminasProrrogacaoModalOpen.set(false)">
-            Fechar
-          </app-button>
-        </div>
-      }
-      
-      @else {
-        <div class="mb-3 d-flex justify-content-center gap-4">
-          <div class="text-center">
-            <i class="fa-regular fa-file-excel fs-1" [class.text-success]="martminasProrrogacaoFile()" [class.text-muted]="!martminasProrrogacaoFile()"></i>
-            <div class="small mt-1">Mart Minas</div>
-          </div>
-          <div class="text-center">
-            <i class="fa-regular fa-file-excel fs-1" [class.text-success]="acrMartminasProrrogacaoFile()" [class.text-muted]="!acrMartminasProrrogacaoFile()"></i>
-            <div class="small mt-1">ACR</div>
-          </div>
-        </div>
-        
-        <h4 class="mb-2">Mart Minas - Prorrogação</h4>
-        
-        <div class="text-start px-3 py-2 bg-light rounded mb-3 small" style="font-size: 13px;">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <span><strong>Arquivo Mart Minas:</strong></span>
-            @if (martminasProrrogacaoFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ martminasProrrogacaoFile()?.name }}</span>
-            } @else {
-              <span class="text-danger">Pendente (Clique no botão Mart Minas)</span>
-            }
-          </div>
-          <div class="d-flex justify-content-between align-items-center">
-            <span><strong>Arquivo ACR:</strong></span>
-            @if (acrMartminasProrrogacaoFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ acrMartminasProrrogacaoFile()?.name }}</span>
-            } @else {
-              <span class="text-danger">Pendente (Clique no botão ACR)</span>
-            }
-          </div>
-        </div>
-
-        <p class="text-muted small">
-          Ambas as planilhas são necessárias. Clique em <strong>Processar</strong> para realizar a conciliação das datas de prorrogação e gerar o relatório consolidado.
-        </p>
-        
-        <div class="mt-4 d-flex justify-content-center gap-2">
-          <app-button variant="secondary" (clicked)="isMartminasProrrogacaoModalOpen.set(false)">
-            Cancelar
-          </app-button>
-          <app-button variant="primary" [disabled]="!martminasProrrogacaoFile() || !acrMartminasProrrogacaoFile()" (clicked)="processMartminasProrrogacao()">
-            Processar
-          </app-button>
-        </div>
-      }
-
-    </div>
-  </app-modal>
-
-  <!-- Hidden Inputs for Savegnago Prorrogação File Selector -->
-  <input type="file" #savegnagoProrrogacaoInput style="display: none;" accept=".xlsx, .xls" (change)="onSavegnagoProrrogacaoSelected($event)">
-  <input type="file" #acrSavegnagoProrrogacaoInput style="display: none;" accept=".xlsx, .xls" (change)="onAcrSavegnagoProrrogacaoSelected($event)">
-
-  <!-- Modal feedback for successful Savegnago Prorrogação file select -->
-  <app-modal [isOpen]="isSavegnagoProrrogacaoModalOpen()" title="Processar Prorrogação - Savegnago" size="sm" (closed)="!isSavegnagoProrrogacaoProcessing() ? isSavegnagoProrrogacaoModalOpen.set(false) : null">
-    <div class="text-center py-3">
-      
-      @if (isSavegnagoProrrogacaoProcessing()) {
-        <div class="processing-spinner mb-3">
-          <app-loading type="spinner" size="lg"></app-loading>
-        </div>
-        <h4 class="mb-2">Processando arquivos...</h4>
-        <p class="text-muted small">Carregando planilhas de prorrogação e extraindo os dados. Por favor, aguarde.</p>
-      }
-      
-      @else if (savegnagoProrrogacaoError() !== '') {
-        <div class="text-danger mb-3">
-          <i class="fa-solid fa-circle-xmark fs-1"></i>
-        </div>
-        <h4 class="mb-2 text-danger">Falha no Processamento</h4>
-        <p class="text-muted small">{{ savegnagoProrrogacaoError() }}</p>
-        <div class="mt-4">
-          <app-button variant="secondary" (clicked)="isSavegnagoProrrogacaoModalOpen.set(false)">
-            Fechar
-          </app-button>
-        </div>
-      }
-      
-      @else {
-        <div class="mb-3 d-flex justify-content-center gap-4">
-          <div class="text-center">
-            <i class="fa-regular fa-file-excel fs-1" [class.text-success]="savegnagoProrrogacaoFile()" [class.text-muted]="!savegnagoProrrogacaoFile()"></i>
-            <div class="small mt-1">Savegnago</div>
-          </div>
-          <div class="text-center">
-            <i class="fa-regular fa-file-excel fs-1" [class.text-success]="acrSavegnagoProrrogacaoFile()" [class.text-muted]="!acrSavegnagoProrrogacaoFile()"></i>
-            <div class="small mt-1">ACR</div>
-          </div>
-        </div>
-        
-        <h4 class="mb-2">Savegnago - Prorrogação</h4>
-        
-        <div class="text-start px-3 py-2 bg-light rounded mb-3 small" style="font-size: 13px;">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <span><strong>Arquivo Savegnago:</strong></span>
-            @if (savegnagoProrrogacaoFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ savegnagoProrrogacaoFile()?.name }}</span>
-            } @else {
-              <span class="text-danger">Pendente (Clique no botão Savegnago)</span>
-            }
-          </div>
-          <div class="d-flex justify-content-between align-items-center">
-            <span><strong>Arquivo ACR:</strong></span>
-            @if (acrSavegnagoProrrogacaoFile()) {
-              <span class="text-success text-truncate max-w-200" style="max-width: 180px; display: inline-block;">{{ acrSavegnagoProrrogacaoFile()?.name }}</span>
-            } @else {
-              <span class="text-danger">Pendente (Clique no botão ACR)</span>
-            }
-          </div>
-        </div>
-
-        <p class="text-muted small">
-          Ambas as planilhas são necessárias. Clique em <strong>Processar</strong> para realizar a conciliação das datas de prorrogação e gerar o relatório consolidado.
-        </p>
-        
-        <div class="mt-4 d-flex justify-content-center gap-2">
-          <app-button variant="secondary" (clicked)="isSavegnagoProrrogacaoModalOpen.set(false)">
-            Cancelar
-          </app-button>
-          <app-button variant="primary" [disabled]="!savegnagoProrrogacaoFile() || !acrSavegnagoProrrogacaoFile()" (clicked)="processSavegnagoProrrogacao()">
-            Processar
-          </app-button>
-        </div>
-      }
-
+      <div class="d-flex justify-content-center gap-3">
+        <app-button variant="secondary" (clicked)="cancelarExclusao()">Cancelar</app-button>
+        <app-button variant="danger" (clicked)="executarExclusao()">Excluir</app-button>
+      </div>
     </div>
   </app-modal>
 

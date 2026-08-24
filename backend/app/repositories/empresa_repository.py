@@ -3,6 +3,7 @@ from sqlalchemy import func, or_
 from typing import List, Tuple, Optional
 from datetime import datetime
 from app.models.empresa import Empresa
+from app.models.empresa_modulo import EmpresaModulo
 from app.schemas.empresa import EmpresaCreate, EmpresaUpdate
 
 class EmpresaRepository:
@@ -15,9 +16,12 @@ class EmpresaRepository:
     def get_by_nome(self, nome: str) -> Optional[Empresa]:
         return self.db.query(Empresa).filter(Empresa.nome == nome).first()
 
-    def get_all(self, skip: int = 0, limit: int = 20, search: Optional[str] = None) -> Tuple[List[Empresa], int]:
+    def get_all(self, skip: int = 0, limit: int = 20, search: Optional[str] = None, modulo: Optional[int] = None) -> Tuple[List[Empresa], int]:
         query = self.db.query(Empresa)
         
+        if modulo is not None:
+            query = query.join(EmpresaModulo, Empresa.idEmpresas == EmpresaModulo.idEmpresas).filter(EmpresaModulo.idModulos == modulo)
+            
         if search:
             search_term = f"%{search}%"
             query = query.filter(
@@ -32,10 +36,19 @@ class EmpresaRepository:
         return items, total
 
     def create(self, empresa_in: EmpresaCreate) -> Empresa:
-        db_obj = Empresa(**empresa_in.model_dump(exclude_unset=True))
+        data = empresa_in.model_dump(exclude_unset=True)
+        modulo_id = data.pop('modulo_id', None)
+        
+        db_obj = Empresa(**data)
         self.db.add(db_obj)
         self.db.commit()
         self.db.refresh(db_obj)
+        
+        if modulo_id is not None:
+            empresa_modulo = EmpresaModulo(idEmpresas=db_obj.idEmpresas, idModulos=modulo_id)
+            self.db.add(empresa_modulo)
+            self.db.commit()
+            
         return db_obj
 
     def update(self, db_obj: Empresa, empresa_in: EmpresaUpdate) -> Empresa:
@@ -51,5 +64,6 @@ class EmpresaRepository:
         return db_obj
 
     def delete(self, db_obj: Empresa) -> None:
+        self.db.query(EmpresaModulo).filter(EmpresaModulo.idEmpresas == db_obj.idEmpresas).delete()
         self.db.delete(db_obj)
         self.db.commit()
