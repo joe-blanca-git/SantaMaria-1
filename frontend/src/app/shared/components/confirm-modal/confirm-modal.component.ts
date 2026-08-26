@@ -16,7 +16,7 @@ export class ConfirmModalComponent {
   @Input() message = 'Tem certeza que deseja executar esta ação?';
   @Input() confirmText = 'Confirmar';
   @Input() cancelText = 'Cancelar';
-  @Input() variant: 'danger' | 'primary' = 'danger';
+  @Input() variant: 'danger' | 'primary' | 'success' = 'danger';
   @Input() isLoading = false;
   @Input() showCancel = true;
 

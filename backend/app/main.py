@@ -20,12 +20,19 @@ app.add_middleware(
 def root():
     return {"message": "SantaMaria API is running. Acesso a documentação em /docs"}
 
-from app.routers import categorias, empresas, cargos_colaboradores, colaboradores, centros_custo, unidades, importacoes
+from fastapi import Depends
+from app.api.deps import get_current_user
+from app.routers import (
+    auth, categorias, empresas, cargos_colaboradores,
+    colaboradores, centros_custo, unidades, importacoes, users
+)
 
-app.include_router(categorias.router, prefix="/api/v1/categorias", tags=["Categorias"])
-app.include_router(empresas.router, prefix="/api/v1/empresas", tags=["Empresas"])
-app.include_router(cargos_colaboradores.router, prefix="/api/v1/cargos-colaboradores", tags=["Cargos de Colaboradores"])
-app.include_router(colaboradores.router, prefix="/api/v1/colaboradores", tags=["Colaboradores"])
-app.include_router(centros_custo.router, prefix="/api/v1/centros-custo", tags=["Centros de Custo"])
-app.include_router(unidades.router, prefix="/api/v1/unidades", tags=["Unidades"])
-app.include_router(importacoes.router, prefix="/api/v1/importacoes", tags=["Importações"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Autenticação"])
+app.include_router(categorias.router, prefix="/api/v1/categorias", tags=["Categorias"], dependencies=[Depends(get_current_user)])
+app.include_router(empresas.router, prefix="/api/v1/empresas", tags=["Empresas"], dependencies=[Depends(get_current_user)])
+app.include_router(cargos_colaboradores.router, prefix="/api/v1/cargos-colaboradores", tags=["Cargos de Colaboradores"], dependencies=[Depends(get_current_user)])
+app.include_router(colaboradores.router, prefix="/api/v1/colaboradores", tags=["Colaboradores"], dependencies=[Depends(get_current_user)])
+app.include_router(centros_custo.router, prefix="/api/v1/centros-custo", tags=["Centros de Custo"], dependencies=[Depends(get_current_user)])
+app.include_router(unidades.router, prefix="/api/v1/unidades", tags=["Unidades"], dependencies=[Depends(get_current_user)])
+app.include_router(importacoes.router, prefix="/api/v1/importacoes", tags=["Importações"], dependencies=[Depends(get_current_user)])
+app.include_router(users.router, prefix="/api/v1/users", tags=["Usuários"], dependencies=[Depends(get_current_user)])

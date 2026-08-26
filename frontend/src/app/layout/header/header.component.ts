@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { ISessionService } from '../../core/interfaces/session.service';
+import { IAuthService } from '../../core/interfaces/auth.service';
 import { AvatarComponent } from '../../shared/components/avatar/avatar.component';
 import { ThemeService } from '../../core/services/theme.service';
 
@@ -13,7 +13,11 @@ import { ThemeService } from '../../core/services/theme.service';
   styleUrl: './header.component.scss'
 })
 export class HeaderComponent {
-  sessionService = inject(ISessionService);
   themeService = inject(ThemeService);
-  user = this.sessionService.currentUser;
+  authService = inject(IAuthService);
+  user = this.authService.currentUser;
+
+  logout() {
+    this.authService.logout().subscribe();
+  }
 }

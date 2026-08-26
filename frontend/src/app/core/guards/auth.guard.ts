@@ -1,15 +1,13 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { ISessionService } from '../interfaces/session.service';
-import { ITokenService } from '../interfaces/token.service';
+import { IAuthService } from '../interfaces/auth.service';
 
 export const authGuard: CanActivateFn = (route, state) => {
-  const sessionService = inject(ISessionService);
-  const tokenService = inject(ITokenService);
+  const authService = inject(IAuthService);
   const router = inject(Router);
 
-  // Idealmente verificamos a sessão (no mock assumimos se tem token é válido)
-  if (sessionService.isAuthenticated() || tokenService.getToken()) {
+  // Verifica se há token e se a sessão está ativa
+  if (authService.isAuthenticated() && authService.getToken()) {
     return true;
   }
 

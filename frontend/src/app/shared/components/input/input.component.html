@@ -12,14 +12,24 @@
     <input 
       class="form-control"
       [class.ps-5]="!!icon"
+      [class.pe-5]="type === 'password'"
       [class.is-invalid]="!!errorMessage"
-      [type]="type"
+      [type]="currentType"
       [placeholder]="placeholder"
       [disabled]="disabled"
       [value]="value"
       (input)="onInput($event)"
       (blur)="onTouch()"
     />
+    @if (type === 'password') {
+      <button 
+        type="button" 
+        class="btn btn-link position-absolute top-50 end-0 translate-middle-y text-muted text-decoration-none shadow-none" 
+        (click)="togglePasswordVisibility()"
+        tabindex="-1">
+        <i class="fa-solid" [class.fa-eye]="currentType === 'password'" [class.fa-eye-slash]="currentType !== 'password'"></i>
+      </button>
+    }
   </div>
 
   @if (errorMessage) {

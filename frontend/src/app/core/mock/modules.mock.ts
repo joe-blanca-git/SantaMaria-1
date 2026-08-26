@@ -45,5 +45,14 @@ export const MOCK_MODULES: AppModule[] = [
     description: 'Conciliação de pagamentos.',
     isActive: true,
     category: 'Pagamentos'
+  },
+  {
+    id: 'mod-configuracoes',
+    name: 'Configurações e Cadastros',
+    icon: 'fa-solid fa-gear',
+    route: '/configuracoes-cadastros',
+    description: 'Gestão de usuários, acessos e configurações globais.',
+    isActive: true,
+    category: 'Administrativo'
   }
 ];

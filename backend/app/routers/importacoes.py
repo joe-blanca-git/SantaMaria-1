@@ -176,6 +176,7 @@ def get_dashboard_analitico(
 
 import re
 import io
+import zipfile
 import pandas as pd
 from fastapi.responses import StreamingResponse
 from html.parser import HTMLParser
@@ -231,25 +232,15 @@ async def conciliar_composicao_ws(wb, acr_file, rows_to_export, font_header, fon
     import logging
     debug_logger = logging.getLogger("composicao_debug")
     debug_logger.setLevel(logging.DEBUG)
-    # Clear handlers
     debug_logger.handlers = []
-    fh = logging.FileHandler('c:/Users/tania.canedo/Documents/git/SantaMaria/backend/app/routers/import_debug.log', mode='w', encoding='utf-8')
-    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-    debug_logger.addHandler(fh)
-    
+    debug_logger.addHandler(logging.NullHandler())
+
     debug_logger.info("--- INICIANDO CONCILIACAO COMPOSICAO ---")
     debug_logger.info(f"acr_file.filename: {acr_file.filename}")
     debug_logger.info(f"rows_to_export count: {len(rows_to_export)}")
     if rows_to_export:
         debug_logger.info(f"Exemplo item export: {rows_to_export[0]}")
-        
-    try:
-        with open('c:/Users/tania.canedo/Documents/git/SantaMaria/backend/ACR_debug.xlsx', 'wb') as debug_f:
-            debug_f.write(acr_bytes)
-        debug_logger.info("Salvo ACR_debug.xlsx com sucesso")
-    except Exception as ex_save:
-        debug_logger.error(f"Erro ao salvar ACR_debug.xlsx: {str(ex_save)}")
-        
+
     try:
         df_acr = pd.read_excel(io.BytesIO(acr_bytes), header=None)
         debug_logger.info("Lido com read_excel")
@@ -2372,8 +2363,6 @@ async def conciliar_drogaraia(
                     df_dr = dfs[0]
                 except Exception:
                     file_head = drogaraia_bytes[:100].decode('utf-8', errors='ignore')
-                    with open("c:/Users/tania.canedo/.gemini/antigravity-ide/brain/612f4152-c197-44cc-a836-c8cadee18fba/scratch/file_format.log", "w") as f:
-                        f.write(file_head)
                     raise HTTPException(status_code=400, detail=f"Arquivo desconhecido. Início do arquivo: {file_head[:50]}")
             
         def parse_date(date_str):
@@ -2442,8 +2431,6 @@ async def conciliar_drogaraia(
             })
             
         if not drogaraia_invoices:
-            with open("c:/Users/tania.canedo/.gemini/antigravity-ide/brain/612f4152-c197-44cc-a836-c8cadee18fba/scratch/error.log", "a") as f:
-                f.write(f"Droga Raia invoices empty. len(df_dr.columns)={len(df_dr.columns)}, rows={len(df_dr)}\n")
             raise HTTPException(status_code=400, detail="Nenhuma nota fiscal encontrada no arquivo Droga Raia.")
 
         # 2. Parse ACR File
@@ -2611,64 +2598,58 @@ async def conciliar_drogaraia(
 async def ler_apb_planilha(file: UploadFile = File(...)):
     try:
         content = await file.read()
-        df = pd.read_excel(io.BytesIO(content), header=None)
+        xls = pd.ExcelFile(io.BytesIO(content))
 
-        if df.shape[1] < 5:
+        # A aba de dados é sempre a que começa com "Relatorio Geral" (o restante do
+        # nome é uma data variável a cada exportação, ex: "Relatorio Geral 24.08.26").
+        sheet_name = next(
+            (s for s in xls.sheet_names if s.strip().startswith("Relatorio Geral")),
+            None
+        )
+        if not sheet_name:
             raise HTTPException(
                 status_code=400,
-                detail="A planilha APB deve conter pelo menos 5 colunas (colunas D e E)."
+                detail="Não foi encontrada nenhuma aba iniciada com 'Relatorio Geral' na planilha."
             )
 
-        # Column D (index 3) is values
-        df[3] = pd.to_numeric(df[3], errors='coerce').fillna(0.0)
+        # Linha 1 = cabeçalho, dados a partir da linha 2. Nome na coluna P (índice 15),
+        # valor na coluna S (índice 18).
+        df = xls.parse(sheet_name, header=0)
 
-        # Clean names and map invalid/ND placeholders to "Erro"
-        def clean_and_map_name(val):
-            if val is None or pd.isna(val):
-                return "Erro"
-            val_str = str(val).strip()
-            val_upper = val_str.upper()
-            # Ignore headers completely
-            if val_upper in ["FORNECEDOR", "NOME", "FAVORECIDO", "BENEFICIÁRIO", "BENEFICIARIO", "NOME COMPLETO"]:
-                return None
-            # Map ND and empty items to "Erro"
-            if val_upper in ["ND", "N/D", "NAN", "", "NONE", "NULL"]:
-                return "Erro"
-            return val_str
+        if df.shape[1] < 19:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A aba '{sheet_name}' não possui as colunas P e S esperadas."
+            )
 
+        nomes = df.iloc[:, 15]
+        valores = pd.to_numeric(df.iloc[:, 18], errors='coerce').fillna(0.0)
+
+        # Consolida por nome, sem repetições, mantendo a ordem de primeira aparição na planilha.
         result = []
-        seen_valid = {}  # maps valid_name -> index in result_list
-
-        for _, row in df.iterrows():
-            name = clean_and_map_name(row[4])
-            if name is None:
+        seen = {}
+        for nome_raw, valor in zip(nomes, valores):
+            if nome_raw is None or (isinstance(nome_raw, float) and pd.isna(nome_raw)):
+                continue
+            nome = str(nome_raw).strip()
+            if not nome:
                 continue
 
-            value = float(row[3])
-
-            if name == "Erro":
-                result.append({
-                    "nome": "Erro",
-                    "valor": value
-                })
+            if nome in seen:
+                result[seen[nome]]["valor"] += float(valor)
             else:
-                if name in seen_valid:
-                    idx = seen_valid[name]
-                    result[idx]["valor"] += value
-                else:
-                    seen_valid[name] = len(result)
-                    result.append({
-                        "nome": name,
-                        "valor": value
-                    })
+                seen[nome] = len(result)
+                result.append({"nome": nome, "valor": float(valor)})
 
         # Print list to Python console as requested
-        print("\n=== LISTA DE PESSOAS CONSOLIDADAS (PLANILHA APB) ===")
+        print(f"\n=== LISTA CONSOLIDADA (aba '{sheet_name}', coluna P x S) ===")
         for idx, item in enumerate(result):
             print(f"{idx+1}. {item['nome']}: R$ {item['valor']:.2f}")
         print("====================================================\n")
 
         return {"sucesso": True, "dados": result}
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2677,518 +2658,461 @@ async def ler_apb_planilha(file: UploadFile = File(...)):
 from datetime import datetime
 from typing import List
 
-@router.post("/conciliacao-pagamentos/cruzamento")
-async def conciliar_pagamentos_cruzamento(
-    apb_file: UploadFile = File(...),
-    banco_files: List[UploadFile] = File(...)
-):
-    try:
-        print(f"[DEBUG CONCILIACAO] Iniciando processamento. APB: {apb_file.filename}, Arquivos de banco: {[f.filename for f in banco_files]}")
-        # 1. Parse APB File
-        content_apb = await apb_file.read()
-        df_apb = pd.read_excel(io.BytesIO(content_apb))
-        print(f"[DEBUG CONCILIACAO] Planilha APB carregada com {len(df_apb)} linhas e colunas: {list(df_apb.columns)}")
-        
-        def find_column_by_name(df, candidates):
-            for col in df.columns:
-                col_lower = str(col).lower().strip()
-                if any(c in col_lower for c in candidates):
-                    return col
-            return None
 
-        apb_list = []
-        if not df_apb.empty:
-            # 1. Tenta encontrar colunas por nome
-            col_data = find_column_by_name(df_apb, ['data', 'vencimento', 'pagamento'])
-            col_doc = find_column_by_name(df_apb, ['documento', 'titulo', 'numero', 'doc', 'nº'])
-            col_forn = find_column_by_name(df_apb, ['fornecedor', 'favorecido', 'nome', 'beneficiario', 'cliente'])
-            col_val = find_column_by_name(df_apb, ['valor', 'val', 'liquido', 'total', 'quant'])
-            col_cnpj_cpf = find_column_by_name(df_apb, ['cnpj', 'cpf', 'identificacao'])
-            col_conta = find_column_by_name(df_apb, ['conta', 'agencia', 'banco', 'pix', 'dados bancarios'])
-            
-            # 2. Se falhar, analisa o conteúdo real das células
-            sample_size = min(10, len(df_apb))
-            if sample_size > 0:
-                column_types = {}
-                for col in df_apb.columns:
-                    non_null_vals = df_apb[col].dropna().head(sample_size).tolist()
-                    if not non_null_vals:
-                        continue
-                    
-                    is_numeric_count = 0
-                    is_date_count = 0
-                    is_cnpj_cpf_count = 0
-                    avg_len = 0
-                    
-                    for val in non_null_vals:
-                        val_str = str(val).strip()
-                        avg_len += len(val_str)
-                        
-                        if isinstance(val, (datetime, pd.Timestamp)):
-                            is_date_count += 1
-                            continue
-                        if re.match(r'^\d{2}/\d{2}/\d{2,4}$', val_str):
-                            is_date_count += 1
-                            continue
-                            
-                        digits = re.sub(r'\D', '', val_str)
-                        if len(digits) in [11, 14] and digits.isdigit():
-                            is_cnpj_cpf_count += 1
-                            
-                        cleaned_val = val_str.replace('R$', '').replace('.', '').replace(',', '.').replace('\xa0', '').strip()
-                        try:
-                            float(cleaned_val)
-                            is_numeric_count += 1
-                        except ValueError:
-                            pass
-                    
-                    avg_len /= len(non_null_vals)
-                    column_types[col] = {
-                        "is_numeric_pct": is_numeric_count / len(non_null_vals),
-                        "is_date_pct": is_date_count / len(non_null_vals),
-                        "is_cnpj_cpf_pct": is_cnpj_cpf_count / len(non_null_vals),
-                        "avg_len": avg_len,
-                        "sample_vals": [str(x) for x in non_null_vals]
-                    }
-                
-                # Mapeia colunas baseado na probabilidade
-                if not col_val:
-                    best_val_col = None
-                    best_pct = 0.0
-                    for col, info in column_types.items():
-                        if info["is_date_pct"] > 0.5:
-                            continue
-                        if info["is_numeric_pct"] > best_pct:
-                            best_pct = info["is_numeric_pct"]
-                            best_val_col = col
-                    if best_pct > 0.4:
-                        col_val = best_val_col
-                
-                if not col_data:
-                    best_date_col = None
-                    best_pct = 0.0
-                    for col, info in column_types.items():
-                        if info["is_date_pct"] > best_pct:
-                            best_pct = info["is_date_pct"]
-                            best_date_col = col
-                    if best_pct > 0.4:
-                        col_data = best_date_col
-                
-                if not col_cnpj_cpf:
-                    best_cnpj_col = None
-                    best_pct = 0.0
-                    for col, info in column_types.items():
-                        if info["is_cnpj_cpf_pct"] > best_pct:
-                            best_pct = info["is_cnpj_cpf_pct"]
-                            best_cnpj_col = col
-                    if best_pct > 0.4:
-                        col_cnpj_cpf = best_cnpj_col
-                
-                if not col_forn:
-                    best_forn_col = None
-                    max_len = 0
-                    for col, info in column_types.items():
-                        if col in [col_val, col_data, col_cnpj_cpf, col_conta]:
-                            continue
-                        if info["avg_len"] <= 4 and any("R$" in val for val in info["sample_vals"]):
-                            continue
-                        if info["avg_len"] > max_len:
-                            max_len = info["avg_len"]
-                            best_forn_col = col
-                    col_forn = best_forn_col
+def _normalizar_nome(nome) -> str:
+    """Normaliza um nome para comparação: remove acentos, colapsa espaços e ignora caixa."""
+    import unicodedata
+    texto = str(nome or "").strip().upper()
+    texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
+    return re.sub(r'\s+', ' ', texto)
 
-            # Definição final de fallbacks caso continue nulo
-            col_val = col_val or (df_apb.columns[3] if len(df_apb.columns) > 3 else df_apb.columns[0])
-            col_forn = col_forn or (df_apb.columns[2] if len(df_apb.columns) > 2 else df_apb.columns[0])
-            col_data = col_data or (df_apb.columns[0] if len(df_apb.columns) > 0 else df_apb.columns[0])
-            col_doc = col_doc or (df_apb.columns[1] if len(df_apb.columns) > 1 else df_apb.columns[0])
-            
-            print(f"[DEBUG CONCILIACAO] Colunas mapeadas - Valor: {col_val}, Fornecedor: {col_forn}, Data: {col_data}, Doc: {col_doc}")
-            
-            for idx, row in df_apb.iterrows():
-                try:
-                    val_raw = row[col_val]
-                    if pd.isna(val_raw):
-                        continue
-                    
-                    # Convert to float
-                    val_str = str(val_raw).replace('R$', '').replace('.', '').replace(',', '.').replace('\xa0', '').strip()
-                    val = float(val_str)
-                    
-                    date_raw = row[col_data] if col_data in df_apb.columns else None
-                    date_str = ""
-                    if pd.notna(date_raw):
-                        if isinstance(date_raw, datetime):
-                            date_str = date_raw.strftime("%d/%m/%Y")
-                        else:
-                            date_str = str(date_raw).strip()
-                    
-                    doc_raw = row[col_doc] if col_doc in df_apb.columns else ""
-                    doc_str = str(doc_raw).strip() if pd.notna(doc_raw) else ""
-                    if doc_str.endswith(".0"):
-                        doc_str = doc_str[:-2]
-                        
-                    forn_raw = row[col_forn] if col_forn in df_apb.columns else ""
-                    forn_str = str(forn_raw).strip() if pd.notna(forn_raw) else ""
-                    
-                    cnpj_cpf_str = ""
-                    if col_cnpj_cpf and col_cnpj_cpf in df_apb.columns:
-                        cnpj_cpf_raw = row[col_cnpj_cpf]
-                        cnpj_cpf_str = str(cnpj_cpf_raw).strip() if pd.notna(cnpj_cpf_raw) else ""
-                        if cnpj_cpf_str.endswith(".0"):
-                            cnpj_cpf_str = cnpj_cpf_str[:-2]
-                    
-                    conta_str = ""
-                    if col_conta and col_conta in df_apb.columns:
-                        conta_raw = row[col_conta]
-                        conta_str = str(conta_raw).strip() if pd.notna(conta_raw) else ""
-                        if conta_str.endswith(".0"):
-                            conta_str = conta_str[:-2]
-                    
-                    apb_list.append({
-                        "data": date_str,
-                        "documento": doc_str,
-                        "fornecedor": forn_str,
-                        "valor": val,
-                        "cnpj_cpf": cnpj_cpf_str,
-                        "dados_bancarios": conta_str,
-                        "matched": False
-                    })
-                except Exception:
-                    continue
 
-        print(f"[DEBUG CONCILIACAO] Total de títulos carregados do APB: {len(apb_list)}")
+def _parse_valor_br(valor_str: str) -> float:
+    """Converte um valor no formato brasileiro ('34.924,31') para float."""
+    return float(valor_str.strip().replace('.', '').replace(',', '.'))
 
-        # 2. Parse Bank Files
-        banco_list = []
-        ia = IAService()
-        
-        for b_file in banco_files:
-            b_filename = b_file.filename or "extrato"
-            print(f"[DEBUG CONCILIACAO] Analisando arquivo de banco: {b_filename}")
-            b_content = await b_file.read()
-            
-            if b_filename.lower().endswith(".pdf"):
-                # Call Gemini for PDF extraction
-                res_ia = await ia.analisar_banco_pdf(b_content, b_filename)
-                extracted_trns = res_ia.get("transacoes", [])
-                for tx in extracted_trns:
-                    sit = tx.get("situacao", "")
-                    if not sit:
-                        desc_t = tx.get("descricao", "")
-                        if "Confirmação de Pagamento" in desc_t or "PIX CEF MATRIZ" in desc_t:
-                            sit = "BB-PIX"
-                        else:
-                            sit = "BB-LIB"
-                    banco_list.append({
-                        "data": tx.get("data", ""),
-                        "descricao": tx.get("descricao", ""),
-                        "valor": tx.get("valor", 0.0),
-                        "documento": tx.get("documento", ""),
-                        "situacao": sit
-                    })
-                print(f"[DEBUG CONCILIACAO] Extraídas {len(extracted_trns)} transações do PDF pelo Gemini.")
-            elif b_filename.lower().endswith(".ofx"):
-                # Parse OFX
-                content_str = b_content.decode("utf-8", errors="ignore")
-                transactions = []
-                stmttrns = re.findall(r'<STMTTRN>(.*?)</STMTTRN>', content_str, re.DOTALL | re.IGNORECASE)
-                if not stmttrns:
-                    stmttrns = re.split(r'<STMTTRN>', content_str, flags=re.IGNORECASE)[1:]
-                    
-                for trn in stmttrns:
-                    fitid = re.search(r'<FITID>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
-                    dtposted = re.search(r'<DTPOSTED>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
-                    trnamt = re.search(r'<TRNAMT>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
-                    memo = re.search(r'<MEMO>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
-                    name = re.search(r'<NAME>(.*?)(?:\n|\r|<)', trn, re.IGNORECASE)
-                    
-                    doc = fitid.group(1).strip() if fitid else ""
-                    date_str = ""
-                    if dtposted:
-                        raw_dt = dtposted.group(1).strip()
-                        if len(raw_dt) >= 8:
-                            date_str = f"{raw_dt[6:8]}/{raw_dt[4:6]}/{raw_dt[0:4]}"
-                    amt = 0.0
-                    if trnamt:
-                        try:
-                            amt = abs(float(trnamt.group(1).strip()))
-                        except ValueError:
-                            pass
-                    desc = memo.group(1).strip() if memo else (name.group(1).strip() if name else "Lançamento Bancário")
-                    
-                    sit = "BB-PIX" if ("Confirmação de Pagamento" in desc or "PIX CEF" in desc) else "BB-LIB"
-                    transactions.append({
-                        "data": date_str,
-                        "descricao": desc,
-                        "valor": amt,
-                        "documento": doc,
-                        "situacao": sit
-                    })
-                banco_list.extend(transactions)
-            else:
-                # Excel or CSV
-                try:
-                    if b_filename.lower().endswith(".csv"):
-                        df_b = pd.read_csv(io.BytesIO(b_content))
-                    else:
-                        df_b = pd.read_excel(io.BytesIO(b_content))
-                    
-                    if not df_b.empty:
-                        col_b_data = find_column(df_b, ['data', 'vencimento', 'pagamento']) or df_b.columns[0]
-                        col_b_desc = find_column(df_b, ['descricao', 'historico', 'memo', 'detalhe', 'fornecedor', 'nome']) or (df_b.columns[1] if len(df_b.columns) > 1 else df_b.columns[0])
-                        col_b_val = find_column(df_b, ['valor', 'val', 'lancamento', 'total', 'quant']) or (df_b.columns[2] if len(df_b.columns) > 2 else df_b.columns[0])
-                        col_b_doc = find_column(df_b, ['documento', 'titulo', 'numero', 'doc'])
-                        
-                        for idx, row in df_b.iterrows():
-                            try:
-                                val_raw = row[col_b_val]
-                                if pd.isna(val_raw):
-                                    continue
-                                val = abs(float(str(val_raw).replace('R$', '').replace('.', '').replace(',', '.').replace('\xa0', '').strip()))
-                                
-                                date_raw = row[col_b_data]
-                                date_str = ""
-                                if pd.notna(date_raw):
-                                    if isinstance(date_raw, datetime):
-                                        date_str = date_raw.strftime("%d/%m/%Y")
-                                    else:
-                                        date_str = str(date_raw).strip()
-                                
-                                doc_str = str(row[col_b_doc]).strip() if (col_b_doc and pd.notna(row[col_b_doc])) else ""
-                                if doc_str.endswith(".0"):
-                                    doc_str = doc_str[:-2]
-                                desc_str = str(row[col_b_desc]).strip() if pd.notna(row[col_b_desc]) else "Lançamento Bancário"
-                                
-                                sit = "BB-PIX" if ("Confirmação de Pagamento" in desc_str or "PIX CEF" in desc_str) else "BB-LIB"
-                                banco_list.append({
-                                    "data": date_str,
-                                    "descricao": desc_str,
-                                    "valor": val,
-                                    "documento": doc_str,
-                                    "situacao": sit
-                                })
-                            except Exception:
-                                continue
-                except Exception:
-                    continue
 
-        print(f"[DEBUG CONCILIACAO] Total de transações bancárias carregadas: {len(banco_list)}")
-        print("[DEBUG CONCILIACAO] Iniciando cruzamento de dados...")
-        
-        # 3. Cruzamento / Reconciliação
-        matches = []
-        for b_item in banco_list:
-            matched_apb = None
-            status = "nao_encontrado"
-            
-            # Regra Específica 1: PIX CEF MATRIZ -> FGTS FOLHA
-            desc_b = b_item["descricao"].lower()
-            if "pix cef matriz" in desc_b or "pagamento instantâneo-pix cef" in desc_b or "pagamento instantaneo-pix cef" in desc_b:
-                for a_item in apb_list:
-                    if not a_item["matched"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
-                        forn_lower = a_item["fornecedor"].lower()
-                        doc_lower = a_item["documento"].lower()
-                        if "fgts" in forn_lower or "folha" in forn_lower or "fgts" in doc_lower or "folha" in doc_lower:
-                            matched_apb = a_item
-                            status = "conciliado"
-                            b_item["situacao"] = "BB-PIX"
-                            break
-            
-            # Match 1: documento + valor exato
-            if not matched_apb and b_item["documento"]:
-                for a_item in apb_list:
-                    if not a_item["matched"] and a_item["documento"] == b_item["documento"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
-                        matched_apb = a_item
-                        status = "conciliado"
-                        break
-                        
-            # Match 2: nome/CNPJ + valor exato + data aproximada (dentro de 5 dias)
-            if not matched_apb:
-                for a_item in apb_list:
-                    if not a_item["matched"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
-                        desc_lower = b_item["descricao"].lower()
-                        forn_lower = a_item["fornecedor"].lower()
-                        
-                        name_match = (forn_lower in desc_lower or desc_lower in forn_lower or (a_item["cnpj_cpf"] and a_item["cnpj_cpf"] in desc_lower))
-                        if name_match:
-                            try:
-                                b_date = datetime.strptime(b_item["data"], "%d/%m/%Y")
-                                a_date = datetime.strptime(a_item["data"], "%d/%m/%Y")
-                                if abs((b_date - a_date).days) <= 5:
-                                    matched_apb = a_item
-                                    status = "conciliado"
-                                    break
-                            except Exception:
-                                matched_apb = a_item
-                                status = "conciliado"
-                                break
-                                
-            # Match 3: valor exato + data aproximada (fall-back geral)
-            if not matched_apb:
-                for a_item in apb_list:
-                    if not a_item["matched"] and abs(a_item["valor"] - b_item["valor"]) < 0.01:
-                        try:
-                            b_date = datetime.strptime(b_item["data"], "%d/%m/%Y")
-                            a_date = datetime.strptime(a_item["data"], "%d/%m/%Y")
-                            if abs((b_date - a_date).days) <= 5:
-                                matched_apb = a_item
-                                status = "conciliado"
-                                break
-                        except Exception:
-                            matched_apb = a_item
-                            status = "conciliado"
-                            break
+def _parse_banco_do_brasil(texto: str) -> list:
+    """
+    Extrai (nome, situacao, valor) das linhas de favorecidos de um PDF de
+    'Pagamentos a Terceiros' do Banco do Brasil. O layout intermediário entre o
+    nome e o valor varia (documento do título, ou banco/agência/conta), então
+    a extração ignora esse trecho e captura apenas nome + situação + valor final.
+    """
+    linha_regex = re.compile(
+        r'^(?P<nome>.+?)\s+(?P<situacao>PENDENTE|REJEITADO)\s+.+?\s+(?P<valor>\d{1,3}(?:\.\d{3})*,\d{2})\s*$'
+    )
+    entradas = []
+    for linha in texto.splitlines():
+        linha = linha.strip()
+        if not linha:
+            continue
+        m = linha_regex.match(linha)
+        if not m:
+            continue
+        entradas.append({
+            'nome': m.group('nome').strip(),
+            'situacao': m.group('situacao'),
+            'valor': _parse_valor_br(m.group('valor'))
+        })
+    return entradas
 
-            # Match 4 (Novo): Agrupamento de múltiplos títulos do APB que somam o valor total debitado/creditado no banco
-            if not matched_apb:
-                desc_lower = b_item["descricao"].lower()
-                candidatos_apb = []
-                for a_item in apb_list:
-                    if not a_item["matched"]:
-                        forn_lower = a_item["fornecedor"].lower()
-                        if forn_lower in desc_lower or desc_lower in forn_lower or (a_item["cnpj_cpf"] and a_item["cnpj_cpf"] in desc_lower):
-                            candidatos_apb.append(a_item)
-                
-                if candidatos_apb:
-                    soma_valores = sum(c["valor"] for c in candidatos_apb)
-                    if abs(soma_valores - b_item["valor"]) < 0.01:
-                        for c in candidatos_apb:
-                            c["matched"] = True
-                        
-                        matches.append({
-                            "banco_data": b_item["data"],
-                            "banco_descricao": b_item["descricao"],
-                            "banco_documento": b_item["documento"],
-                            "banco_valor": b_item["valor"],
-                            "apb_data": ", ".join(list(set([c["data"] for c in candidatos_apb if c["data"]]))),
-                            "apb_documento": ", ".join([c["documento"] for c in candidatos_apb if c["documento"]]),
-                            "apb_fornecedor": candidatos_apb[0]["fornecedor"],
-                            "apb_valor": soma_valores,
-                            "cnpj_cpf": candidatos_apb[0]["cnpj_cpf"],
-                            "dados_bancarios": candidatos_apb[0]["dados_bancarios"],
-                            "status": "conciliado",
-                            "situacao": b_item.get("situacao", "BB-LIB")
-                        })
-                        continue
 
-            if matched_apb:
-                matched_apb["matched"] = True
-                matches.append({
-                    "banco_data": b_item["data"],
-                    "banco_descricao": b_item["descricao"],
-                    "banco_documento": b_item["documento"],
-                    "banco_valor": b_item["valor"],
-                    "apb_data": matched_apb["data"],
-                    "apb_documento": matched_apb["documento"],
-                    "apb_fornecedor": matched_apb["fornecedor"],
-                    "apb_valor": matched_apb["valor"],
-                    "cnpj_cpf": matched_apb["cnpj_cpf"],
-                    "dados_bancarios": matched_apb["dados_bancarios"],
-                    "status": status,
-                    "situacao": b_item.get("situacao", "BB-LIB")
-                })
-            else:
-                matches.append({
-                    "banco_data": b_item["data"],
-                    "banco_descricao": b_item["descricao"],
-                    "banco_documento": b_item["documento"],
-                    "banco_valor": b_item["valor"],
-                    "apb_data": "",
-                    "apb_documento": "",
-                    "apb_fornecedor": "",
-                    "apb_valor": 0.0,
-                    "cnpj_cpf": "",
-                    "dados_bancarios": "",
-                    "status": "nao_encontrado",
-                    "situacao": b_item.get("situacao", "BB-LIB")
-                })
+# Registro de parsers de extrato por banco. Identificação por nome do arquivo
+# (ex: "Banco do Brasil-1.pdf", "Banco do Brasil-2.pdf"). Novos bancos/critérios
+# são adicionados aqui, sem alterar o restante do endpoint.
+BANK_PARSERS = [
+    {
+        'nome': 'Banco do Brasil',
+        'match': lambda filename: 'banco do brasil' in (filename or '').lower(),
+        'parse': _parse_banco_do_brasil,
+        'codigos': {'PENDENTE': 'BB-LIB', 'REJEITADO': 'ERRO'}
+    }
+]
 
-        for a_item in apb_list:
-            if not a_item["matched"]:
-                matches.append({
-                    "banco_data": "",
-                    "banco_descricao": "",
-                    "banco_documento": "",
-                    "banco_valor": 0.0,
-                    "apb_data": a_item["data"],
-                    "apb_documento": a_item["documento"],
-                    "apb_fornecedor": a_item["fornecedor"],
-                    "apb_valor": a_item["valor"],
-                    "cnpj_cpf": a_item["cnpj_cpf"],
-                    "dados_bancarios": a_item["dados_bancarios"],
-                    "status": "nao_encontrado",
-                    "situacao": ""
-                })
 
-        print(f"[DEBUG CONCILIACAO] Cruzamento concluído com sucesso. Total de registros para conferência: {len(matches)}")
-        return {"sucesso": True, "conferencia": matches}
-    except Exception as e:
-        import traceback
-        print("[ERROR CONCILIACAO] Ocorreu uma exceção durante o cruzamento:")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+def _parse_bb_pendencias_pix(texto: str) -> list:
+    """
+    Extrai os valores das linhas 'Confirmação de Pagamento Instantâneo-PIX' do
+    relatório 'Central de Pendências' do Banco do Brasil. A descrição de cada
+    lançamento quebra em várias linhas no PDF (ex: '...PIX CEF\\nMATRIZ'), então
+    a extração varre o texto inteiro (DOTALL) para juntar cada bloco antes do valor.
+    """
+    padrao = re.compile(
+        r'Pagamento\s+(?P<desc>.+?)\s*\n\s*(?P<valor>\d{1,3}(?:\.\d{3})*,\d{2})\s+\d{2}/\d{2}/\d{4}\s+\d+\s+\d+',
+        re.DOTALL
+    )
+    valores = []
+    for m in padrao.finditer(texto):
+        desc_norm = _normalizar_nome(m.group('desc'))
+        if desc_norm.startswith('CONFIRMACAO DE PAGAMENTO INSTANTANEO-PIX'):
+            valores.append(_parse_valor_br(m.group('valor')))
+    return valores
 
-class ExportarConciliacaoRequest(BaseModel):
-    dados: List[dict]
-    fileName: Optional[str] = "conciliacao_pagamentos.xlsx"
 
-@router.post("/conciliacao-pagamentos/exportar")
-def exportar_conciliacao(
-    req: ExportarConciliacaoRequest,
+def _parse_itau_salarios_rh(texto: str) -> list:
+    """
+    Extrai o 'Valor total (R$)' do resumo do lote de um PDF de pagamentos de
+    Salários/RH do Itaú. O texto extraído do PDF vem fora de ordem (rótulos de
+    coluna antes dos dados), mas o valor sempre aparece logo após a seção
+    'Empresa pagadora'.
+    """
+    m = re.search(r'Empresa pagadora.*?(?P<valor>\d{1,3}(?:\.\d{3})*,\d{2})', texto, re.DOTALL)
+    return [_parse_valor_br(m.group('valor'))] if m else []
+
+
+# Registro de parsers "agregados": em vez de casar cada lançamento individualmente
+# contra um nome extraído do PDF, somam-se todos os valores extraídos e comparam-se
+# contra a soma de linhas-alvo na planilha. 'modo_alvo' define como as linhas-alvo são
+# encontradas: 'exato' (nome normalizado igual a algum item de 'alvo') ou 'contem' (nome
+# normalizado contém algum item de 'alvo' como substring). Se a soma não bater, grava-se
+# 'codigo_erro' em todas as linhas-alvo (nunca deixa em branco).
+AGGREGATE_PARSERS = [
+    {
+        'nome': 'Banco do Brasil - Pendências PIX (FGTS)',
+        'match': lambda filename: 'bb-pendencias-pix' in (filename or '').lower(),
+        'extrair_valores': _parse_bb_pendencias_pix,
+        'modo_alvo': 'exato',
+        'alvo': ['FGTS FOLHA', 'FGTS - FOLHA DE PAGAMENTO'],
+        'codigo_ok': 'BB-PIX',
+        'codigo_erro': 'ERRO'
+    },
+    {
+        'nome': 'Itaú - Salários e RH',
+        'match': lambda filename: 'itau-salarios' in (filename or '').lower(),
+        'extrair_valores': _parse_itau_salarios_rh,
+        'modo_alvo': 'contem',
+        'alvo': ['RESCISAO', 'RESCICAO', 'FOLHA PAGTO', 'FERIAS'],
+        'codigo_ok': 'ITAU-CP',
+        'codigo_erro': 'ERRO'
+    }
+]
+
+
+def _localizar_sheet_xml(conteudo_planilha: bytes, prefixo_nome: str):
+    """
+    Resolve o caminho interno do XML (ex: 'xl/worksheets/sheet5.xml') da primeira aba
+    cujo nome comece com `prefixo_nome`, lendo diretamente workbook.xml/workbook.xml.rels
+    (sem passar pelo openpyxl) — usado para editar a planilha em bytes, preservando 100%
+    do restante do arquivo (pivot tables, gráficos, etc.), que o openpyxl não sabe
+    reserializar sem perdas.
+    """
+    # Os atributos de <sheet> e <Relationship> podem vir em qualquer ordem dependendo de
+    # quem gerou o arquivo (Excel escreve name/r:id e Id/Target; o openpyxl pode escrever
+    # Target antes de Id, e usar path absoluto "/xl/..." em vez de relativo) — por isso cada
+    # atributo é extraído individualmente do trecho da tag, em vez de assumir uma ordem fixa.
+    import xml.sax.saxutils as saxutils
+    with zipfile.ZipFile(io.BytesIO(conteudo_planilha)) as z:
+        workbook_xml = z.read('xl/workbook.xml').decode('utf-8')
+        rels_xml = z.read('xl/_rels/workbook.xml.rels').decode('utf-8')
+
+    r_id_alvo = None
+    nome_aba_encontrada = None
+    for m in re.finditer(r'<sheet\s+([^>]*?)/?>', workbook_xml):
+        atributos = m.group(1)
+        nome_m = re.search(r'name="([^"]*)"', atributos)
+        rid_m = re.search(r'r:id="([^"]+)"', atributos)
+        if not nome_m or not rid_m:
+            continue
+        nome_aba = saxutils.unescape(nome_m.group(1)).strip()
+        if nome_aba.startswith(prefixo_nome):
+            r_id_alvo = rid_m.group(1)
+            nome_aba_encontrada = nome_aba
+            break
+
+    if not r_id_alvo:
+        return None, None
+
+    for m in re.finditer(r'<Relationship\s+([^>]*?)/?>', rels_xml):
+        atributos = m.group(1)
+        id_m = re.search(r'Id="([^"]+)"', atributos)
+        target_m = re.search(r'Target="([^"]+)"', atributos)
+        if not id_m or not target_m or id_m.group(1) != r_id_alvo:
+            continue
+        target = target_m.group(1)
+        # Target absoluto ("/xl/worksheets/sheetN.xml") é relativo à raiz do pacote;
+        # relativo ("worksheets/sheetN.xml") é relativo à pasta do próprio .rels ("xl/").
+        sheet_path = target.lstrip('/') if target.startswith('/') else f"xl/{target}"
+        return sheet_path, nome_aba_encontrada
+
+    return None, None
+
+
+def _definir_celula_coluna_a(sheet_xml: str, row_idx: int, valor: str) -> str:
+    """
+    Insere (ou substitui) a célula da coluna A na linha `row_idx`, editando o XML da
+    planilha diretamente como texto. Não usa openpyxl para não arriscar corromper
+    pivot tables/gráficos ao reserializar o restante do arquivo.
+    """
+    import xml.sax.saxutils as saxutils
+    valor_escapado = saxutils.escape(valor)
+    nova_celula = f'<c r="A{row_idx}" t="inlineStr"><is><t>{valor_escapado}</t></is></c>'
+
+    padrao_linha = re.compile(rf'(<row r="{row_idx}"[^>]*>)(.*?)(</row>)', re.DOTALL)
+    m = padrao_linha.search(sheet_xml)
+    if not m:
+        # Linha sem nenhuma célula no XML (não deveria acontecer para linhas com dados).
+        return sheet_xml
+
+    abertura, conteudo, fechamento = m.group(1), m.group(2), m.group(3)
+
+    # 'spans' é só uma dica opcional de intervalo de colunas; garantimos que inclua a coluna A.
+    abertura = re.sub(
+        r'spans="(\d+):(\d+)"',
+        lambda sm: f'spans="{min(int(sm.group(1)), 1)}:{sm.group(2)}"',
+        abertura
+    )
+
+    padrao_cel_a = re.compile(rf'<c r="A{row_idx}"[^>]*?(?:/>|>.*?</c>)', re.DOTALL)
+    if padrao_cel_a.search(conteudo):
+        novo_conteudo = padrao_cel_a.sub(lambda _: nova_celula, conteudo, count=1)
+    else:
+        novo_conteudo = nova_celula + conteudo
+
+    linha_nova = abertura + novo_conteudo + fechamento
+    return sheet_xml[:m.start()] + linha_nova + sheet_xml[m.end():]
+
+
+def _gravar_codigos_na_planilha(conteudo_planilha: bytes, sheet_xml_path: str, codigos_por_linha: dict) -> bytes:
+    """
+    Retorna os bytes de um novo .xlsx idêntico ao original, exceto pela aba indicada em
+    `sheet_xml_path`, onde as linhas de `codigos_por_linha` (row -> código) recebem o
+    valor na coluna A. Todos os outros arquivos do pacote (pivot tables, pivot caches,
+    gráficos, sharedStrings, calcChain, etc.) são copiados byte a byte, sem qualquer
+    reserialização — é isso que evita o aviso de 'arquivo corrompido' do Excel.
+    """
+    with zipfile.ZipFile(io.BytesIO(conteudo_planilha)) as z_in:
+        sheet_xml = z_in.read(sheet_xml_path).decode('utf-8')
+        for row_idx, codigo in codigos_por_linha.items():
+            sheet_xml = _definir_celula_coluna_a(sheet_xml, row_idx, codigo)
+
+        saida = io.BytesIO()
+        with zipfile.ZipFile(saida, 'w', zipfile.ZIP_DEFLATED) as z_out:
+            for item in z_in.infolist():
+                dados = z_in.read(item.filename)
+                if item.filename == sheet_xml_path:
+                    dados = sheet_xml.encode('utf-8')
+                z_out.writestr(item, dados)
+
+        return saida.getvalue()
+
+
+@router.post("/conciliacao-pagamentos/conciliar-bancos")
+async def conciliar_bancos(
+    planilha: UploadFile = File(...),
+    extratos: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
     try:
-        dados = req.dados
-        filename = req.fileName or "conciliacao_pagamentos.xlsx"
+        import openpyxl
 
-        # Calculate stats
-        matched = sum(1 for d in dados if d.get("status") == "conciliado")
-        unmatched = sum(1 for d in dados if d.get("status") == "nao_encontrado")
-        divergent = sum(1 for d in dados if d.get("status") == "divergente")
-        status_val = "warning" if divergent > 0 else "success"
-        user_val = "Ana Paula (Financeiro)"
+        # 1. Carrega a planilha original só para LEITURA (identificar nomes/valores e
+        # decidir os códigos). A gravação final NÃO passa pelo openpyxl: reserializar o
+        # arquivo inteiro com ele corrompe pivot tables/gráficos (o Excel acusa "problema
+        # no conteúdo" ao abrir) — por isso a coluna A é escrita depois via edição direta
+        # do XML original, preservando o restante do arquivo byte a byte.
+        conteudo_planilha = await planilha.read()
+        # (Sem read_only=True: no modo leitura-rápida o openpyxl confia cegamente no
+        # <dimension> declarado no XML, que nesta planilha está inflado até a linha
+        # 1.048.576 — faria o loop abaixo varrer mais de 1 milhão de linhas à toa.)
+        wb = openpyxl.load_workbook(io.BytesIO(conteudo_planilha), data_only=True)
 
-        # Save Importacao record in database
-        tipo_str = f"CONCILIACAO_BANCARIA|{matched}|{unmatched}|{divergent}|{status_val}|{user_val}"
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", tipo_str)
-
-        df = pd.DataFrame(dados)
-        df_rename = df.rename(columns={
-            "banco_data": "Data Banco",
-            "banco_descricao": "Descrição Banco",
-            "banco_documento": "Doc Banco",
-            "banco_valor": "Valor Banco",
-            "apb_data": "Data APB",
-            "apb_documento": "Doc APB",
-            "apb_fornecedor": "Fornecedor APB",
-            "apb_valor": "Valor APB",
-            "cnpj_cpf": "CNPJ/CPF APB",
-            "dados_bancarios": "Dados Bancários APB",
-            "status": "Status Conciliação",
-            "situacao": "Situação Banco"
-        })
-        
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_rename.to_excel(writer, index=False, sheet_name='Conciliação')
-            
-        output.seek(0)
-        
-        headers_response = {
-            'Content-Disposition': f'attachment; filename="{filename}"',
-            'Access-Control-Expose-Headers': 'Content-Disposition'
-        }
-        
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers=headers_response
+        sheet_name = next(
+            (s for s in wb.sheetnames if s.strip().startswith("Relatorio Geral")),
+            None
         )
+        if not sheet_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Não foi encontrada nenhuma aba iniciada com 'Relatorio Geral' na planilha."
+            )
+        ws = wb[sheet_name]
+
+        sheet_xml_path, _ = _localizar_sheet_xml(conteudo_planilha, "Relatorio Geral")
+        if not sheet_xml_path:
+            raise HTTPException(
+                status_code=400,
+                detail="Não foi possível localizar o XML interno da aba 'Relatorio Geral' na planilha."
+            )
+
+        # Linhas de dados a partir da linha 2. Nome na coluna P (16), Valor na coluna S (19).
+        linhas_planilha = []
+        for row_idx in range(2, ws.max_row + 1):
+            nome_cel = ws.cell(row=row_idx, column=16).value
+            if nome_cel is None or str(nome_cel).strip() == "":
+                continue
+            valor_cel = ws.cell(row=row_idx, column=19).value
+            try:
+                valor = float(valor_cel) if valor_cel is not None else 0.0
+            except (TypeError, ValueError):
+                valor = 0.0
+            linhas_planilha.append({
+                'row': row_idx,
+                'nome': str(nome_cel).strip(),
+                'nome_norm': _normalizar_nome(nome_cel),
+                'valor': valor,
+                'matched': False
+            })
+
+        # 2. Extrai os lançamentos/valores de cada PDF de extrato enviado. Cada arquivo é
+        # roteado para um parser "de lote" (concilia linha a linha) ou "agregado" (soma
+        # todos os valores e concilia contra nome(s) fixo(s) na planilha), conforme o nome.
+        import pypdf
+        import hashlib
+
+        lancamentos = []
+        agregados_por_parser = {}
+
+        # Deduplica por conteúdo: se o mesmo PDF (bytes idênticos) for enviado mais de uma
+        # vez (ex: usuário selecionou o mesmo arquivo duas vezes), ele é processado só uma
+        # vez — do contrário um valor "agregado" (como o de PIX x FGTS) seria contado em
+        # dobro e gerar um ERRO falso mesmo quando os valores realmente batem.
+        hashes_vistos = {}
+
+        for arquivo in extratos:
+            parser_lote = next((p for p in BANK_PARSERS if p['match'](arquivo.filename)), None)
+            parser_agregado = next((p for p in AGGREGATE_PARSERS if p['match'](arquivo.filename)), None)
+
+            if not parser_lote and not parser_agregado:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Não foi possível identificar o banco/formato do arquivo '{arquivo.filename}'."
+                )
+
+            conteudo = await arquivo.read()
+            hash_conteudo = hashlib.sha256(conteudo).hexdigest()
+            if hash_conteudo in hashes_vistos:
+                print(f"  - Arquivo '{arquivo.filename}' ignorado: conteúdo idêntico ao de '{hashes_vistos[hash_conteudo]}' já enviado nesta requisição.")
+                continue
+            hashes_vistos[hash_conteudo] = arquivo.filename
+
+            leitor = pypdf.PdfReader(io.BytesIO(conteudo))
+            texto = "\n".join(pagina.extract_text() or "" for pagina in leitor.pages)
+
+            if parser_lote:
+                for entrada in parser_lote['parse'](texto):
+                    codigo = parser_lote['codigos'].get(entrada['situacao'])
+                    if not codigo:
+                        continue
+                    lancamentos.append({
+                        'arquivo': arquivo.filename,
+                        'nome': entrada['nome'],
+                        'nome_norm': _normalizar_nome(entrada['nome']),
+                        'valor': entrada['valor'],
+                        'codigo': codigo
+                    })
+
+            if parser_agregado:
+                chave = parser_agregado['nome']
+                grupo = agregados_por_parser.setdefault(chave, {'parser': parser_agregado, 'valores': []})
+                grupo['valores'].extend(parser_agregado['extrair_valores'](texto))
+
+        # 3. Concilia cada lançamento contra as linhas ainda não conciliadas da planilha.
+        # Os códigos decididos aqui são só acumulados em memória (codigos_por_linha); a
+        # gravação de fato acontece depois, direto no XML original (ver passo 4).
+        #
+        # Feito em duas passagens (e não uma única, lançamento a lançamento) porque um
+        # mesmo fornecedor pode ter várias linhas na planilha pertencentes a títulos
+        # diferentes (ex: título A dividido em 2 linhas + título B em 1 linha só). Se a
+        # regra de soma (1 para N) fosse tentada linha a linha, na ordem em que os PDFs
+        # aparecem, ela poderia somar linhas de títulos diferentes que ainda não bateram
+        # 1 para 1 e nunca encontrar o valor certo — mesmo que o título B feche exato
+        # pouco depois. Resolvendo primeiro TODOS os 1 para 1 (de qualquer título/PDF) e
+        # só então tentando a soma no que restou, as linhas já batidas exatamente saem do
+        # "pool" antes da soma ser calculada.
+        TOLERANCIA = 0.01
+        matched_1a1 = 0
+        matched_soma = 0
+        sem_match = []
+        codigos_por_linha = {}
+
+        # 3a. Regra 1 para 1 em todos os lançamentos primeiro.
+        pendentes_soma = []
+        for lanc in lancamentos:
+            candidatos = [l for l in linhas_planilha if not l['matched'] and l['nome_norm'] == lanc['nome_norm']]
+            if not candidatos:
+                pendentes_soma.append(lanc)
+                continue
+
+            # Existe uma linha isolada (ainda não conciliada) com o mesmo valor.
+            alvo = next((c for c in candidatos if abs(c['valor'] - lanc['valor']) < TOLERANCIA), None)
+            if alvo:
+                alvo['matched'] = True
+                codigos_por_linha[alvo['row']] = lanc['codigo']
+                matched_1a1 += 1
+            else:
+                pendentes_soma.append(lanc)
+
+        # 3b. Regra 1 para N (soma) só no que sobrou, com o pool de linhas já livre das
+        # que bateram exatamente na passagem acima.
+        for lanc in pendentes_soma:
+            candidatos = [l for l in linhas_planilha if not l['matched'] and l['nome_norm'] == lanc['nome_norm']]
+            if not candidatos:
+                sem_match.append(lanc)
+                continue
+
+            soma = sum(c['valor'] for c in candidatos)
+            if abs(soma - lanc['valor']) < TOLERANCIA:
+                for c in candidatos:
+                    c['matched'] = True
+                    codigos_por_linha[c['row']] = lanc['codigo']
+                matched_soma += 1
+                continue
+
+            sem_match.append(lanc)
+
+        # 3b. Concilia os critérios "agregados" (ex: PIX x FGTS, Itaú x Rescisão/Férias/Folha):
+        # soma todos os valores extraídos do(s) PDF(s) daquele parser e compara contra a soma
+        # das linhas-alvo ainda não conciliadas na planilha (por nome exato ou por conter uma
+        # das palavras-chave, conforme 'modo_alvo'). Se não bater, grava 'codigo_erro' em
+        # todas as linhas-alvo (nunca deixa em branco).
+        agregados_resultado = []
+        for chave, grupo in agregados_por_parser.items():
+            parser_agregado = grupo['parser']
+            soma_pdf = sum(grupo['valores'])
+            alvo_norm = {_normalizar_nome(n) for n in parser_agregado['alvo']}
+
+            if parser_agregado['modo_alvo'] == 'contem':
+                candidatos = [
+                    l for l in linhas_planilha
+                    if not l['matched'] and any(kw in l['nome_norm'] for kw in alvo_norm)
+                ]
+            else:
+                candidatos = [l for l in linhas_planilha if not l['matched'] and l['nome_norm'] in alvo_norm]
+
+            if not candidatos:
+                agregados_resultado.append((chave, soma_pdf, None, None))
+                continue
+
+            soma_excel = sum(c['valor'] for c in candidatos)
+            codigo = parser_agregado['codigo_ok'] if abs(soma_excel - soma_pdf) < TOLERANCIA else parser_agregado['codigo_erro']
+            for c in candidatos:
+                c['matched'] = True
+                codigos_por_linha[c['row']] = codigo
+            agregados_resultado.append((chave, soma_pdf, soma_excel, codigo))
+
+        print(f"\n=== CONCILIAÇÃO DE EXTRATOS BANCÁRIOS (aba '{sheet_name}') ===")
+        print(f"Lançamentos extraídos dos PDFs: {len(lancamentos)}")
+        print(f"Conciliados 1 para 1: {matched_1a1}")
+        print(f"Conciliados por soma (1 para N): {matched_soma}")
+        print(f"Sem correspondência: {len(sem_match)}")
+        for item in sem_match:
+            print(f"  - [{item['arquivo']}] {item['nome']} | R$ {item['valor']:.2f}")
+        for chave, soma_pdf, soma_excel, codigo in agregados_resultado:
+            if soma_excel is None:
+                print(f"  - [{chave}] Nenhuma linha-alvo encontrada na planilha (soma PDF: R$ {soma_pdf:.2f})")
+            else:
+                print(f"  - [{chave}] Soma PDF: R$ {soma_pdf:.2f} | Soma planilha: R$ {soma_excel:.2f} | Código: {codigo}")
+        print("====================================================\n")
+
+        # 4. Retorna a mesma planilha original, apenas com a coluna A preenchida. A edição é
+        # feita direto no XML original (não via wb.save()) para preservar 100% do restante
+        # do arquivo — pivot tables, pivot cache, gráficos, etc. — que o openpyxl não
+        # consegue reserializar sem perdas (o que fazia o Excel acusar arquivo corrompido).
+        conteudo_final = _gravar_codigos_na_planilha(conteudo_planilha, sheet_xml_path, codigos_por_linha)
+
+        from urllib.parse import quote
+        original_name = planilha.filename or "planilha.xlsx"
+        extensao = original_name.rsplit('.', 1)[-1] if '.' in original_name else 'xlsx'
+
+        # Registra a importação para aparecer no histórico da tela — sem gravar nenhuma
+        # movimentação, só o registro da importação em si (como já é feito nas outras
+        # rotas de conciliação/extração deste arquivo).
+        ImportacaoService(db).registrar_importacao(original_name, extensao, "Conciliação Bancária")
+
+        nome_encoded = quote(original_name)
+        return StreamingResponse(
+            io.BytesIO(conteudo_final),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=\"planilha_conciliada.xlsx\"; filename*=UTF-8''{nome_encoded}"}
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/plano-saude/sorriso/analisar")
 async def analisar_plano_saude_sorriso(

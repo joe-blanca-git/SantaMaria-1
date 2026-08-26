@@ -52,7 +52,7 @@ export class LoginComponent {
       next: () => {
         this.isLoading = false;
         // Pega a URL de retorno (ex: se o guard bloqueou a entrada no dashboard)
-        const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/';
+        const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/home';
         this.router.navigateByUrl(returnUrl);
       },
       error: (err) => {

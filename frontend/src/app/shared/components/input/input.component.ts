@@ -24,6 +24,20 @@ export class InputComponent implements ControlValueAccessor {
   @Input() errorMessage?: string;
   @Input() icon?: string;
 
+  currentType: string = 'text';
+
+  ngOnInit() {
+    this.currentType = this.type;
+  }
+
+  togglePasswordVisibility(): void {
+    if (this.currentType === 'password') {
+      this.currentType = 'text';
+    } else {
+      this.currentType = 'password';
+    }
+  }
+
   value: string = '';
 
   onChange: any = () => {};

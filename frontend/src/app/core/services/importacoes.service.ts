@@ -234,17 +234,13 @@ export class ImportacoesService {
     });
   }
 
-  conciliarPagamentos(apbFile: File, bancoFiles: File[]): Observable<any> {
+  conciliarBancos(planilha: File, extratos: File[]): Observable<Blob> {
     const formData = new FormData();
-    formData.append('apb_file', apbFile);
-    bancoFiles.forEach((file) => {
-      formData.append('banco_files', file);
+    formData.append('planilha', planilha);
+    extratos.forEach((file) => {
+      formData.append('extratos', file);
     });
-    return this.http.post<any>(`${this.apiUrl}/conciliacao-pagamentos/cruzamento`, formData);
-  }
-
-  exportarConciliacao(dados: any[], fileName: string): Observable<Blob> {
-    return this.http.post(`${this.apiUrl}/conciliacao-pagamentos/exportar`, { dados, fileName }, {
+    return this.http.post(`${this.apiUrl}/conciliacao-pagamentos/conciliar-bancos`, formData, {
       responseType: 'blob'
     });
   }

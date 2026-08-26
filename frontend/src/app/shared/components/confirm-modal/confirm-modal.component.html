@@ -6,7 +6,11 @@
 >
   <div class="confirm-content text-center py-4">
     <div class="icon-circle mb-3 mx-auto" [ngClass]="variant">
-      <i class="fa-solid" [ngClass]="variant === 'danger' ? 'fa-triangle-exclamation text-danger' : 'fa-circle-question text-primary'"></i>
+      <i class="fa-solid" [ngClass]="{
+        'fa-triangle-exclamation text-danger': variant === 'danger',
+        'fa-circle-question text-primary': variant === 'primary',
+        'fa-circle-check text-success': variant === 'success'
+      }"></i>
     </div>
     <p class="mb-0 text-muted">{{ message }}</p>
   </div>

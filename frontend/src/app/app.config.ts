@@ -10,8 +10,6 @@ registerLocaleData(localePt);
 
 // Interfaces
 import { IAuthService } from './core/interfaces/auth.service';
-import { ITokenService } from './core/interfaces/token.service';
-import { ISessionService } from './core/interfaces/session.service';
 import { IUserService } from './core/interfaces/user.service';
 import { IPermissionsService } from './core/interfaces/permissions.service';
 import { IModulesService } from './core/interfaces/modules.service';
@@ -21,10 +19,8 @@ import { IDashboardService } from './core/interfaces/dashboard.service';
 import { IEnvironmentService, EnvironmentService } from './core/http/environment.service';
 
 // Implementações Mockadas
-import { MockAuthService } from './core/auth/mock-auth.service';
-import { LocalTokenService } from './core/auth/local-token.service';
-import { DefaultSessionService } from './core/auth/default-session.service';
-import { MockUserService } from './core/auth/mock-user.service';
+import { AuthService } from './core/auth/auth.service';
+import { UserService } from './core/auth/user.service';
 import { MockPermissionsService } from './core/services/mock-permissions.service';
 import { MockModulesService } from './core/services/mock-modules.service';
 import { MockNotificationsService } from './core/services/mock-notifications.service';
@@ -44,10 +40,8 @@ export const appConfig: ApplicationConfig = {
       withInterceptors([authInterceptor])
     ),
     // Injeções de Dependência
-    { provide: IAuthService, useClass: MockAuthService },
-    { provide: ITokenService, useClass: LocalTokenService },
-    { provide: ISessionService, useClass: DefaultSessionService },
-    { provide: IUserService, useClass: MockUserService },
+    { provide: IAuthService, useClass: AuthService },
+    { provide: IUserService, useClass: UserService },
     { provide: IPermissionsService, useClass: MockPermissionsService },
     { provide: IModulesService, useClass: MockModulesService },
     { provide: INotificationsService, useClass: MockNotificationsService },

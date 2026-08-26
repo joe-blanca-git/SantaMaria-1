@@ -35,5 +35,12 @@ export const pagesRoutes: Routes = [
     path: 'conciliacao-pagamentos',
     loadComponent: () => import('./conciliacao-pagamentos/conciliacao-pagamentos.component').then(m => m.ConciliacaoPagamentosComponent),
     data: { breadcrumb: 'Conciliação de Pagamentos', icon: 'fa-solid fa-scale-balanced' }
+  },
+  {
+    path: 'configuracoes-cadastros',
+    loadComponent: () => import('./configuracoes-cadastros/configuracoes-cadastros.component').then(m => m.ConfiguracoesCadastrosComponent),
+    data: { breadcrumb: 'Configurações e Cadastros' }
   }
 ];
+
+

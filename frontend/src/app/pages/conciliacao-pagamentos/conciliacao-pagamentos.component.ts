@@ -6,40 +6,13 @@ import { CardComponent } from '../../shared/components/card/card.component';
 import { ButtonComponent } from '../../shared/components/button/button.component';
 import { ModalComponent } from '../../shared/components/modal/modal.component';
 import { LoadingComponent } from '../../shared/components/loading/loading.component';
-import { BadgeComponent } from '../../shared/components/badge/badge.component';
 import { ConfirmModalComponent } from '../../shared/components/confirm-modal/confirm-modal.component';
-import { ImportacoesService } from '../../core/services/importacoes.service';
+import { ImportacoesService, Importacao } from '../../core/services/importacoes.service';
 
 export interface MenuItem {
   id: string;
   label: string;
   icon: string;
-}
-
-export interface ConciliacaoHistory {
-  id?: number;
-  date: string;
-  fileName: string;
-  matchedCount: number;
-  unmatchedCount: number;
-  divergencesCount: number;
-  status: 'success' | 'warning' | 'failed' | string;
-  user: string;
-}
-
-export interface ConferenciaItem {
-  banco_data: string;
-  banco_descricao: string;
-  banco_documento: string;
-  banco_valor: number;
-  apb_data: string;
-  apb_documento: string;
-  apb_fornecedor: string;
-  apb_valor: number;
-  status: 'conciliado' | 'divergente' | 'nao_encontrado';
-  cnpj_cpf?: string;
-  dados_bancarios?: string;
-  situacao?: string;
 }
 
 @Component({
@@ -53,7 +26,6 @@ export interface ConferenciaItem {
     ButtonComponent,
     ModalComponent,
     LoadingComponent,
-    BadgeComponent,
     ConfirmModalComponent
   ],
   templateUrl: './conciliacao-pagamentos.component.html',
@@ -121,7 +93,7 @@ export class ConciliacaoPagamentosComponent implements OnInit {
   @ViewChild('bancoFileInput') bancoFileInput!: ElementRef<HTMLInputElement>;
 
   // Sidebar Menu Selection
-  activeMenu = signal<string>('dashboard');
+  activeMenu = signal<string>('conciliar');
 
   isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null
     ? localStorage.getItem('sidebarCollapsed') === 'true'
@@ -134,7 +106,6 @@ export class ConciliacaoPagamentosComponent implements OnInit {
 
   // Menu Definition
   menus = signal<MenuItem[]>([
-    { id: 'dashboard', label: 'Dashboards', icon: 'fa-solid fa-table-columns' },
     { id: 'conciliar', label: 'Conciliações', icon: 'fa-solid fa-scale-balanced' }
   ]);
 
@@ -146,25 +117,20 @@ export class ConciliacaoPagamentosComponent implements OnInit {
   isProcessing = signal<boolean>(false);
   processingStep = signal<number>(0);
   processingText = signal<string>('');
-  
-  // Conferencia State
-  isConferenciaModalOpen = signal<boolean>(false);
-  conferenciaItems = signal<ConferenciaItem[]>([]);
-  isExporting = signal<boolean>(false);
 
   // History Search
   searchConciliacao = signal<string>('');
 
-  // History List
-  conciliacaoHistory = signal<ConciliacaoHistory[]>([]);
+  // History List — mostra somente as colunas reais da tabela `importacoes`.
+  conciliacaoHistory = signal<Importacao[]>([]);
 
   filteredConciliacaoHistory = computed(() => {
     const term = this.searchConciliacao().toLowerCase().trim();
     if (!term) return this.conciliacaoHistory();
-    return this.conciliacaoHistory().filter(h => 
-      h.fileName.toLowerCase().includes(term) ||
-      h.user.toLowerCase().includes(term) ||
-      h.date.toLowerCase().includes(term)
+    return this.conciliacaoHistory().filter(h =>
+      h.nomeArquivo.toLowerCase().includes(term) ||
+      h.tipo.toLowerCase().includes(term) ||
+      (h.empresa?.nome || '').toLowerCase().includes(term)
     );
   });
 
@@ -173,44 +139,17 @@ export class ConciliacaoPagamentosComponent implements OnInit {
   }
 
   carregarHistorico() {
-    this.importacoesService.listar(1, 50, undefined, 'CONCILIACAO_BANCARIA').subscribe({
-      next: (res) => {
-        const mapped = (res.items || []).map((imp: any) => this.mapImportacaoToHistory(imp));
-        this.conciliacaoHistory.set(mapped);
-      },
+    this.importacoesService.listar(1, 50, undefined, 'Conciliação Bancária').subscribe({
+      next: (res) => this.conciliacaoHistory.set(res.items || []),
       error: (err) => console.error('Erro ao carregar historico de conciliações:', err)
     });
   }
 
-  mapImportacaoToHistory(imp: any): ConciliacaoHistory {
-    const parts = (imp.tipo || '').split('|');
-    const matchedCount = parts[1] ? parseInt(parts[1], 10) : 0;
-    const unmatchedCount = parts[2] ? parseInt(parts[2], 10) : 0;
-    const divergencesCount = parts[3] ? parseInt(parts[3], 10) : 0;
-    const status = parts[4] || 'success';
-    const user = parts[5] || 'Sistema';
-    
-    let dateStr = imp.createdAt;
-    try {
-      const d = new Date(imp.createdAt);
-      if (!isNaN(d.getTime())) {
-        const pad = (n: number) => n.toString().padStart(2, '0');
-        dateStr = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
-    return {
-      id: imp.idImportacoes,
-      date: dateStr,
-      fileName: imp.nomeArquivo,
-      matchedCount,
-      unmatchedCount,
-      divergencesCount,
-      status,
-      user
-    };
+  formatarData(dataIso: string): string {
+    const d = new Date(dataIso);
+    if (isNaN(d.getTime())) return dataIso;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   excluirConciliacao(id: number) {
@@ -256,7 +195,14 @@ export class ConciliacaoPagamentosComponent implements OnInit {
         this.lerPlanilhaApb(file);
       } else {
         const filesArray = Array.from(input.files);
-        this.selectedFilesBanco.update(existing => [...existing, ...filesArray]);
+        this.selectedFilesBanco.update(existing => {
+          const jaSelecionados = new Set(existing.map(f => `${f.name}_${f.size}`));
+          const novos = filesArray.filter(f => !jaSelecionados.has(`${f.name}_${f.size}`));
+          if (novos.length < filesArray.length) {
+            this.openAlert('Arquivo Duplicado', 'Um ou mais arquivos selecionados já estavam na lista e foram ignorados.', 'primary');
+          }
+          return [...existing, ...novos];
+        });
       }
     }
   }
@@ -281,117 +227,39 @@ export class ConciliacaoPagamentosComponent implements OnInit {
   }
 
   processarCruzamento() {
-    const apb = this.selectedFileApb();
-    const bancos = this.selectedFilesBanco();
+    const planilha = this.selectedFileApb();
+    const extratos = this.selectedFilesBanco();
 
-    if (!apb || bancos.length === 0) return;
+    if (!planilha || extratos.length === 0) return;
 
     this.isProcessing.set(true);
     this.processingStep.set(1);
-    this.processingText.set('Enviando arquivos para análise e extração...');
+    this.processingText.set('Enviando planilha e extratos bancários...');
 
-    // Progress updates to simulate stages
-    setTimeout(() => {
-      this.processingStep.set(2);
-      this.processingText.set('Extraindo transações dos arquivos do banco (usando IA para PDFs)...');
-      
-      setTimeout(() => {
-        this.processingStep.set(3);
-        this.processingText.set('Executando cruzamento inteligente de lançamentos...');
-        
-        // Execute API call
-        this.importacoesService.conciliarPagamentos(apb, bancos).subscribe({
-          next: (res) => {
-            this.isProcessing.set(false);
-            if (res.sucesso && res.conferencia) {
-              this.conferenciaItems.set(res.conferencia);
-              this.isConferenciaModalOpen.set(true);
-            }
-          },
-          error: (err) => {
-            this.isProcessing.set(false);
-            console.error('Erro ao realizar conciliação:', err);
-            this.openAlert('Erro', 'Ocorreu um erro no processamento da conciliação. Verifique a chave de API e a integridade dos arquivos.', 'danger');
-          }
-        });
-      }, 1500);
-    }, 1500);
-  }
-
-  updateConferenciaItem(index: number, field: keyof ConferenciaItem, event: Event) {
-    const input = event.target as HTMLInputElement;
-    const value = field === 'apb_valor' || field === 'banco_valor' ? parseFloat(input.value) || 0 : input.value;
-    
-    this.conferenciaItems.update(items => {
-      const updated = [...items];
-      updated[index] = {
-        ...updated[index],
-        [field]: value
-      } as ConferenciaItem;
-      
-      // Auto-recalculate status if values are edited
-      if (field === 'apb_valor' || field === 'banco_valor') {
-        const apbVal = updated[index].apb_valor;
-        const bVal = updated[index].banco_valor;
-        if (apbVal > 0 && bVal > 0) {
-          updated[index].status = Math.abs(apbVal - bVal) < 0.01 ? 'conciliado' : 'divergente';
-        } else {
-          updated[index].status = 'nao_encontrado';
-        }
-      }
-      
-      return updated;
-    });
-  }
-
-  changeStatus(index: number, newStatus: 'conciliado' | 'divergente' | 'nao_encontrado') {
-    this.conferenciaItems.update(items => {
-      const updated = [...items];
-      updated[index] = {
-        ...updated[index],
-        status: newStatus
-      };
-      return updated;
-    });
-  }
-
-  confirmarEExportar() {
-    this.isExporting.set(true);
-    const dados = this.conferenciaItems();
-    const fileName = this.selectedFileApb()?.name || 'conciliacao.xlsx';
-
-    this.importacoesService.exportarConciliacao(dados, fileName).subscribe({
+    this.importacoesService.conciliarBancos(planilha, extratos).subscribe({
       next: (blob) => {
-        this.isExporting.set(false);
-        this.isConferenciaModalOpen.set(false);
+        this.isProcessing.set(false);
 
-        // Download Excel File
+        // Baixa a mesma planilha recebida, agora com a coluna A preenchida
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `conciliacao_consolidada.xlsx`;
+        a.download = planilha.name;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
 
-        // Reload history
-        this.carregarHistorico();
-
-        // Reset file selections
         this.selectedFileApb.set(null);
         this.selectedFilesBanco.set([]);
+        this.carregarHistorico();
       },
       error: (err) => {
-        this.isExporting.set(false);
-        console.error('Erro ao exportar planilha:', err);
-        this.openAlert('Erro', 'Não foi possível exportar a planilha de conciliação.', 'danger');
+        this.isProcessing.set(false);
+        console.error('Erro ao conciliar extratos bancários:', err);
+        const detail = this.extractErrorMessage(err);
+        this.openAlert('Erro na Conciliação', `Não foi possível conciliar os extratos:\n${detail}`, 'danger');
       }
     });
-  }
-
-  cancelarConferencia() {
-    this.isConferenciaModalOpen.set(false);
-    this.conferenciaItems.set([]);
   }
 }

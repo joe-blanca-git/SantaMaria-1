@@ -79,21 +79,28 @@ A rota de leitura de extratos consome os serviços do *Google Gemini*. Como medi
 # Segurança e Autenticação (Aviso Crítico)
 
 > **ATENÇÃO TÉCNICA (Auditoria):** Atualmente (Fase 1 do Backend), a aplicação FastAPI **não possui validação de rotas, middlewares de login ou JWT implementados**. Todos os endpoints são integralmente públicos. 
-A configuração de CORS (`main.py`) também é permissiva (`["*"]`). A implementação do **Supabase Authentication** (originalmente planejado) para bloqueio e identidade ainda consta no *roadmap* como pendente e deve ser a maior prioridade de infraestrutura e arquitetura de segurança antes da transição para produção.
+A configuração de CORS (`main.py`) também é permissiva (`["*"]`). A implementação do **Supabase Authentication** (originalmente planejado) para bloqueio e identidade ainda consta no *roadmap* como pendente e deve ser a maior prioridade de infraestrutura e arquitetura de segurança antes da transição para produção. O Frontend já está preparado para essa transição (ver seção de Estrutura do Frontend acima) através de uma camada de serviços mockados facilmente substituível.
+
+> **Correção aplicada nesta auditoria:** `backend/app/core/config.py` continha uma senha de banco de dados real hardcoded como valor padrão da classe `Settings` (exposta no histórico do Git). O valor padrão foi removido; **recomenda-se fortemente rotacionar essa senha no MySQL**, já que ela permanece visível em commits antigos.
 
 ---
 
 # Estrutura do Frontend Angular
 
 ```text
-src/
-├── core/         # Infraestrutura global, interceptors, autenticação
+src/app/
+├── core/         # Infraestrutura global: auth, guards, http, interceptors, mock, services
 ├── shared/       # Componentes visuais genéricos (Botões, Modais, Tabelas, Inputs)
 ├── layout/       # Estruturas padrão (Header, Sidebar, Footer)
-└── modules/      # Domínios de negócio isolados (financeiro, despesas, etc)
+└── pages/        # Domínios de negócio isolados (Despesas de Viagens, Plano de Saúde,
+                   # Extratores, Conciliação de Pagamentos, Inadimplência, Home, Login)
 ```
 
-O Frontend possui gerenciamento através de **Angular Signals** e adota o padrão **Mobile First**, suportando resoluções de desktop até smartphones. O Layout utiliza menus recolhíveis, skeleton loaders e feedbacks em mensagens de `toast` para alta qualidade UX.
+*Nota: `app/modules/` existe na árvore do projeto mas está vazio — as features de negócio residem em `app/pages/`.*
+
+O Frontend possui gerenciamento através de **Angular Signals** (adotado de forma consistente nas páginas mais recentes; o módulo mais antigo, Despesas de Viagens, ainda não foi migrado) e adota o padrão **Mobile First**, suportando resoluções de desktop até smartphones. O Layout utiliza menus recolhíveis, skeleton loaders e feedbacks em mensagens de `toast` para alta qualidade UX.
+
+**Autenticação no Frontend (placeholder mockado)**: como o backend ainda não implementa autenticação real (ver aviso abaixo), o frontend usa uma arquitetura *interface-first* — interfaces como `IAuthService`/`ISessionService`/`ITokenService` são injetadas via DI (`app.config.ts`) apontando para implementações mock (`MockAuthService`, etc.) que aceitam qualquer credencial válida no formulário e geram um token fake. O interceptor de HTTP (`auth.interceptor.ts`) e o guard de rotas já funcionam de verdade contra esse token mock, então a troca para autenticação real (ex.: Supabase Auth) exige apenas implementar os serviços reais e trocar os bindings — nenhuma outra camada do app depende do mock diretamente. As chamadas de dados de negócio (colaboradores, importações, dashboards) já são 100% reais contra a API.
 
 ---
 

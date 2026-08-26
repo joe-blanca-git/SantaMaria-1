@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 
-import { ISessionService } from '../../core/interfaces/session.service';
+import { IAuthService } from '../../core/interfaces/auth.service';
 import { IModulesService } from '../../core/interfaces/modules.service';
 
 import { CardComponent } from '../../shared/components/card/card.component';
@@ -20,10 +20,10 @@ import { CardComponent } from '../../shared/components/card/card.component';
   styleUrl: './home.component.scss'
 })
 export class HomeComponent implements OnInit, OnDestroy {
-  sessionService = inject(ISessionService);
+  authService = inject(IAuthService);
   private modulesService = inject(IModulesService);
 
-  user = this.sessionService.currentUser;
+  user = this.authService.currentUser;
   
   // Real-time clock
   currentDate = new Date();

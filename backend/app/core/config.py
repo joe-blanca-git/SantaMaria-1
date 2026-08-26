@@ -5,7 +5,11 @@ class Settings(BaseSettings):
     DATABASE_PORT: int = 3306
     DATABASE_NAME: str = "stamariabd"
     DATABASE_USER: str = "root"
-    DATABASE_PASSWORD: str = "Likeaboos@70"
+    DATABASE_PASSWORD: str = ""
+    
+    JWT_KEY: str = "sua_chave_secreta_aqui_para_desenvolvimento"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     # Usando o conector assíncrono seria ideal, mas para manter simples no ORM padrão do SQLAlchemy
     # usaremos pymysql

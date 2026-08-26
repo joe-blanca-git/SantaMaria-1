@@ -31,14 +31,11 @@
         [class.fa-moon]="themeService.activeTheme() === 'light'"></i>
     </button>
 
-    <div class="user-profile">
-      <div class="info">
-        <span class="name">{{ user()?.name }}</span>
-        <span class="role">{{ user()?.role }}</span>
-      </div>
-      <app-avatar [initials]="user()?.name?.charAt(0) || 'U'" [imageUrl]="user()?.avatarUrl || ''"
-        status="online"></app-avatar>
-      <i class="fa-solid fa-chevron-down arrow-down"></i>
+    <div class="user-profile d-flex align-items-center gap-3">
+      <span class="name text-nowrap fw-semibold text-secondary fs-6 mb-0">{{ user()?.name }}</span>
+      <button class="btn btn-sm btn-outline-danger text-nowrap" (click)="logout()" title="Sair do sistema">
+        <i class="fa-solid fa-arrow-right-from-bracket"></i> Sair
+      </button>
     </div>
   </div>
 
