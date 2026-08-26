@@ -54,6 +54,11 @@
     <main class="main-content">
       <div class="tab-content custom-tab-content">
 
+         <div class="dashboard-section-header">
+              <h3>Importação de Faturas e Extratos</h3>
+              <p>Importe os relatórios em PDF dos nossos parceiros para processamento via IA.</p>
+            </div>
+
               <!-- Usuários Tab Content -->
               <div *ngIf="activeConfigTab === 'usuarios'" class="config-layout">
                 <div class="config-header">
@@ -61,18 +66,18 @@
                     <h2>Gerenciar Usuários e Acessos</h2>
                     <p class="text-muted">Gerencie os usuários do sistema, senhas e níveis de acesso (Admin/Default).</p>
                   </div>
-                  <div class="config-actions">
-                    <button class="btn btn-primary" (click)="openCadastroModal()">
-                      <i class="fa-solid fa-user-plus me-2"></i> Novo Usuário
-                    </button>
-                  </div>
                 </div>
 
-                <div class="config-toolbar">
+                <div class="config-toolbar d-flex justify-content-between align-items-center">
                   <div class="search-box">
                     <i class="fa-solid fa-search text-muted"></i>
                     <input type="text" placeholder="Buscar por nome ou email..." [ngModel]="searchTerm"
                       (ngModelChange)="onSearchUsuariosChange($event)">
+                  </div>
+                  <div class="config-actions">
+                    <button class="btn btn-primary" (click)="openCadastroModal()">
+                      <i class="fa-solid fa-user-plus me-2"></i> Novo Usuário
+                    </button>
                   </div>
                 </div>
 
@@ -88,7 +93,10 @@
                     </thead>
                     <tbody>
                       <tr *ngFor="let user of filteredUsers">
-                        <td class="fw-medium">{{ user.name }}</td>
+                        <td class="fw-medium">
+                          {{ user.name }}
+                          <span *ngIf="user.active === 'N'" class="badge bg-danger ms-2" style="font-size: 0.65rem;">BLOQUEADO</span>
+                        </td>
                         <td>{{ user.email }}</td>
                         <td>
                           <app-badge [text]="user.role === 'admin' ? 'Administrador' : 'Padrão'" 
@@ -102,6 +110,11 @@
                             </button>
                             <button class="btn-icon" title="Alterar Nível de Acesso" (click)="confirmGrantAdmin(user)">
                               <i class="fa-solid fa-shield-halved"></i>
+                            </button>
+                            <button class="btn-icon" [ngClass]="{'delete': user.active !== 'N'}" 
+                                    [title]="user.active === 'N' ? 'Desbloquear Usuário' : 'Bloquear Usuário'" 
+                                    (click)="confirmToggleBlockUser(user)">
+                              <i class="fa-solid" [ngClass]="user.active === 'N' ? 'fa-lock-open text-success' : 'fa-lock'"></i>
                             </button>
                           </div>
                         </td>
@@ -121,21 +134,21 @@
                     <h2>Gerenciar Colaboradores</h2>
                     <p class="text-muted">Adicione ou importe a lista de colaboradores da empresa.</p>
                   </div>
+                </div>
+
+                <div class="config-toolbar d-flex justify-content-between align-items-center">
+                  <div class="search-box">
+                    <i class="fa-solid fa-search text-muted"></i>
+                    <input type="text" placeholder="Buscar por nome, centro ou cargo..." [ngModel]="searchTerm"
+                      (ngModelChange)="onSearchChange($event)">
+                  </div>
                   <div class="config-actions">
-                    <button class="btn btn-outline-secondary" (click)="openImportColabModal()">
+                    <button class="btn btn-outline-secondary me-2" (click)="openImportColabModal()">
                       <i class="fa-solid fa-file-import me-2"></i> Importar Colaboradores
                     </button>
                     <button class="btn btn-primary" (click)="openColaboradorModal()">
                       <i class="fa-solid fa-plus me-2"></i> Cadastrar Colaborador
                     </button>
-                  </div>
-                </div>
-
-                <div class="config-toolbar">
-                  <div class="search-box">
-                    <i class="fa-solid fa-search text-muted"></i>
-                    <input type="text" placeholder="Buscar por nome, centro ou cargo..." [ngModel]="searchTerm"
-                      (ngModelChange)="onSearchChange($event)">
                   </div>
                 </div>
 
@@ -210,18 +223,18 @@
                     <h2>Gerenciar Unidades</h2>
                     <p class="text-muted">Cadastre as unidades de negócio.</p>
                   </div>
-                  <div class="config-actions">
-                    <button class="btn btn-primary" (click)="openUnidadeModal()">
-                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Unidade
-                    </button>
-                  </div>
                 </div>
 
-                <div class="config-toolbar">
+                <div class="config-toolbar d-flex justify-content-between align-items-center">
                   <div class="search-box">
                     <i class="fa-solid fa-search text-muted"></i>
                     <input type="text" placeholder="Buscar por código ou descrição..." [ngModel]="searchUnidade"
                       (ngModelChange)="onSearchUnidadeChange($event)">
+                  </div>
+                  <div class="config-actions">
+                    <button class="btn btn-primary" (click)="openUnidadeModal()">
+                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Unidade
+                    </button>
                   </div>
                 </div>
 
@@ -278,18 +291,18 @@
                     <h2>Gerenciar Categorias</h2>
                     <p class="text-muted">Cadastre as categorias para classificação de despesas.</p>
                   </div>
-                  <div class="config-actions">
-                    <button class="btn btn-primary" (click)="openCategoriaModal()">
-                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Categoria
-                    </button>
-                  </div>
                 </div>
 
-                <div class="config-toolbar">
+                <div class="config-toolbar d-flex justify-content-between align-items-center">
                   <div class="search-box">
                     <i class="fa-solid fa-search text-muted"></i>
                     <input type="text" placeholder="Buscar categoria..." [ngModel]="searchCategoria"
                       (ngModelChange)="onSearchCategoriaChange($event)">
+                  </div>
+                  <div class="config-actions">
+                    <button class="btn btn-primary" (click)="openCategoriaModal()">
+                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Categoria
+                    </button>
                   </div>
                 </div>
 
@@ -347,18 +360,18 @@
                     <h2>Gerenciar Centros de Custo</h2>
                     <p class="text-muted">Cadastre os Centros de Custo por Estado.</p>
                   </div>
-                  <div class="config-actions">
-                    <button class="btn btn-primary text-nowrap" (click)="openCentroCustoModal()">
-                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Centro de Custo
-                    </button>
-                  </div>
                 </div>
 
-                <div class="config-toolbar">
+                <div class="config-toolbar d-flex justify-content-between align-items-center">
                   <div class="search-box">
                     <i class="fa-solid fa-search text-muted"></i>
                     <input type="text" placeholder="Buscar por código ou nome..." [ngModel]="searchCentroCusto"
                       (ngModelChange)="onSearchCentroCustoChange($event)">
+                  </div>
+                  <div class="config-actions">
+                    <button class="btn btn-primary text-nowrap" (click)="openCentroCustoModal()">
+                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Centro de Custo
+                    </button>
                   </div>
                 </div>
 
@@ -420,18 +433,18 @@
                     <h2>Gerenciar Empresas</h2>
                     <p class="text-muted">Cadastre as empresas e cartões (Faturas/Extratos) para importação.</p>
                   </div>
-                  <div class="config-actions">
-                    <button class="btn btn-primary" (click)="openEmpresaModal()">
-                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Empresa
-                    </button>
-                  </div>
                 </div>
 
-                <div class="config-toolbar">
+                <div class="config-toolbar d-flex justify-content-between align-items-center">
                   <div class="search-box">
                     <i class="fa-solid fa-search text-muted"></i>
                     <input type="text" placeholder="Buscar empresa..." [ngModel]="searchEmpresaConfig"
                       (ngModelChange)="onSearchEmpresaConfigChange($event)">
+                  </div>
+                  <div class="config-actions">
+                    <button class="btn btn-primary" (click)="openEmpresaModal()">
+                      <i class="fa-solid fa-plus me-2"></i> Cadastrar Empresa
+                    </button>
                   </div>
                 </div>
 

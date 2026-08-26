@@ -139,6 +139,7 @@ def get_dashboard(
     id_empresa: int = Query(None),
     id_colaborador: int = Query(None),
     id_categoria: int = Query(None),
+    tipo_importacao: str = Query(None),
     db: Session = Depends(get_db)
 ):
     try:
@@ -148,7 +149,8 @@ def get_dashboard(
             data_fim=data_fim,
             id_empresa=id_empresa,
             id_colaborador=id_colaborador,
-            id_categoria=id_categoria
+            id_categoria=id_categoria,
+            tipo_importacao=tipo_importacao
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -160,6 +162,7 @@ def get_dashboard_analitico(
     id_empresa: int = Query(None),
     id_colaborador: int = Query(None),
     id_categoria: int = Query(None),
+    tipo_importacao: str = Query(None),
     db: Session = Depends(get_db)
 ):
     try:
@@ -169,7 +172,8 @@ def get_dashboard_analitico(
             data_fim=data_fim,
             id_empresa=id_empresa,
             id_colaborador=id_colaborador,
-            id_categoria=id_categoria
+            id_categoria=id_categoria,
+            tipo_importacao=tipo_importacao
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

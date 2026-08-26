@@ -1,10 +1,7 @@
-import { HttpErrorResponse, HttpEvent, HttpHandlerFn, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { throwError, BehaviorSubject, catchError, filter, switchMap, take, Observable } from 'rxjs';
+import { throwError, catchError } from 'rxjs';
 import { IAuthService } from '../interfaces/auth.service';
-
-let isRefreshing = false;
-const refreshTokenSubject = new BehaviorSubject<string | null>(null);
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(IAuthService);
@@ -20,56 +17,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(authReq).pipe(
     catchError((error: HttpErrorResponse) => {
-      if (error.status === 401) {
-        return handle401Error(authReq, next, authService, error);
+      if (error.status === 401 || error.status === 403) {
+        authService.logout().subscribe();
       }
       return throwError(() => error);
     })
   );
 };
-
-function handle401Error(
-  request: HttpRequest<unknown>, 
-  next: HttpHandlerFn, 
-  authService: IAuthService, 
-  error: HttpErrorResponse
-): Observable<HttpEvent<unknown>> {
-  if (!isRefreshing) {
-    isRefreshing = true;
-    refreshTokenSubject.next(null);
-
-    const refreshToken = authService.getRefreshToken();
-
-    if (refreshToken) {
-      return authService.refreshToken(refreshToken).pipe(
-        switchMap((tokens) => {
-          isRefreshing = false;
-          refreshTokenSubject.next(tokens.accessToken);
-          return next(request.clone({
-            headers: request.headers.set('Authorization', `Bearer ${tokens.accessToken}`)
-          }));
-        }),
-        catchError((err) => {
-          isRefreshing = false;
-          authService.logout().subscribe(); // Force logout se refresh falhar
-          return throwError(() => err);
-        })
-      );
-    } else {
-      isRefreshing = false;
-      authService.logout().subscribe();
-      return throwError(() => error);
-    }
-  }
-
-  // Se já está dando refresh, espera na fila
-  return refreshTokenSubject.pipe(
-    filter(token => token !== null),
-    take(1),
-    switchMap(jwt => {
-      return next(request.clone({
-        headers: request.headers.set('Authorization', `Bearer ${jwt}`)
-      }));
-    })
-  );
-}

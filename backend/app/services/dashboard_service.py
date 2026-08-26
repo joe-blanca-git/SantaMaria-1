@@ -9,6 +9,7 @@ from app.models.unidade import Unidade
 from app.models.categoria import Categoria
 from app.models.empresa import Empresa
 from app.models.centro_custo import CentroCusto, CentroEstado
+from app.models.importacao import Importacao
 
 class DashboardService:
     def __init__(self, db: Session):
@@ -20,7 +21,8 @@ class DashboardService:
         data_fim: str = None,
         id_empresa: int = None,
         id_colaborador: int = None,
-        id_categoria: int = None
+        id_categoria: int = None,
+        tipo_importacao: str = None
     ) -> Dict[str, Any]:
         # Formata datas base
         if data_inicio:
@@ -40,6 +42,8 @@ class DashboardService:
         
         # Filtros utilitários
         def apply_filters(q):
+            if tipo_importacao:
+                q = q.join(Importacao, Movimentacao.idImportacoes == Importacao.idImportacoes).filter(Importacao.tipo == tipo_importacao)
             q = q.filter(Movimentacao.createdAt >= dt_inicio)
             q = q.filter(Movimentacao.createdAt < dt_fim_inclusive)
             if id_empresa:
@@ -352,7 +356,8 @@ class DashboardService:
         data_fim: str = None,
         id_empresa: int = None,
         id_colaborador: int = None,
-        id_categoria: int = None
+        id_categoria: int = None,
+        tipo_importacao: str = None
     ) -> Dict[str, Any]:
         MONTHS_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
         
@@ -374,6 +379,8 @@ class DashboardService:
         
         # Filtros utilitários
         def apply_filters(q):
+            if tipo_importacao:
+                q = q.join(Importacao, Movimentacao.idImportacoes == Importacao.idImportacoes).filter(Importacao.tipo == tipo_importacao)
             q = q.filter(Movimentacao.createdAt >= dt_inicio)
             q = q.filter(Movimentacao.createdAt < dt_fim_inclusive)
             if id_empresa:

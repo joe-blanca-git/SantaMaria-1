@@ -1,5 +1,5 @@
 import { ApplicationConfig, provideZoneChangeDetection, LOCALE_ID, importProvidersFrom } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withPreloading, PreloadAllModules } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { routes } from './app.routes';
 import { registerLocaleData } from '@angular/common';
@@ -35,7 +35,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     { provide: LOCALE_ID, useValue: 'pt-BR' },
     provideZoneChangeDetection({ eventCoalescing: true }),
-    provideRouter(routes),
+    provideRouter(routes, withPreloading(PreloadAllModules)),
     provideHttpClient(
       withInterceptors([authInterceptor])
     ),

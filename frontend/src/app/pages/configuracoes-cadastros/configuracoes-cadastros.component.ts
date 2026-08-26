@@ -54,8 +54,8 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
   carregarUsuarios() {
     // Mock users just to render
     this.users.set([
-      { id: '1', name: 'Admin User', email: 'admin@stamaria.ind.br', role: 'admin' },
-      { id: '2', name: 'Default User', email: 'default@stamaria.ind.br', role: 'user' }
+      { id: '1', name: 'Admin User', email: 'admin@stamaria.ind.br', role: 'admin', active: 'S' },
+      { id: '2', name: 'Default User', email: 'default@stamaria.ind.br', role: 'user', active: 'S' }
     ]);
   }
 
@@ -122,6 +122,24 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
       }));
       this.closeConfirmModal();
     });
+  }
+
+  confirmToggleBlockUser(user: User) {
+    const isBlocked = user.active === 'N';
+    const action = isBlocked ? 'desbloquear' : 'bloquear';
+    this.openConfirmModal(
+      isBlocked ? 'Desbloquear Usuário' : 'Bloquear Usuário',
+      `Tem certeza que deseja ${action} o usuário ${user.name}?`,
+      () => {
+        this.users.update(users => users.map(u => {
+          if (u.id === user.id) {
+            return { ...u, active: isBlocked ? 'S' : 'N' };
+          }
+          return u;
+        }));
+        this.closeConfirmModal();
+      }
+    );
   }
 
   private fb = inject(FormBuilder);

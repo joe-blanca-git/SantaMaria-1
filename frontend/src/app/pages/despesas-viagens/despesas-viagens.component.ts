@@ -190,6 +190,8 @@ export class DespesasViagensComponent implements OnInit {
     if (this.dashFiltroCategoria) {
       filtros.id_categoria = this.dashFiltroCategoria;
     }
+    
+    filtros.tipo_importacao = 'IA_DESPESAS';
 
     this.importacoesService.obterDadosDashboard(filtros).subscribe({
       next: (res) => {
@@ -503,7 +505,7 @@ export class DespesasViagensComponent implements OnInit {
   searchImportacaoTerm = '';
 
   carregarImportacoes() {
-    this.importacoesService.listar(this.currentImportacaoPage, this.itemsImportacaoPerPage, this.searchImportacaoTerm).subscribe({
+    this.importacoesService.listar(this.currentImportacaoPage, this.itemsImportacaoPerPage, this.searchImportacaoTerm, 'IA_DESPESAS').subscribe({
       next: (res: any) => {
         this.listaImportacoes = res.items;
         this.totalImportacoes = res.total;
@@ -839,12 +841,13 @@ export class DespesasViagensComponent implements OnInit {
   atualizarDadosAnalitico() {
     this.isAnaliticoLoading = true;
 
-    const filtros = {
+    const filtros: any = {
       data_inicio: this.analiticoDataInicio ? this.analiticoDataInicio.toISOString().split('T')[0] : null,
       data_fim: this.analiticoDataFim ? this.analiticoDataFim.toISOString().split('T')[0] : null,
       id_empresa: null,
       id_colaborador: this.analiticoColaborador || null,
-      id_categoria: this.analiticoCategoria || null
+      id_categoria: this.analiticoCategoria || null,
+      tipo_importacao: 'IA_DESPESAS'
     };
 
     this.importacoesService.obterDadosDashboardAnalitico(filtros).subscribe({
@@ -1244,12 +1247,13 @@ export class DespesasViagensComponent implements OnInit {
 
   atualizarDadosRelatorio() {
     this.isRelatorioLoading = true;
-    const filtros = {
+    const filtros: any = {
       data_inicio: this.relatorioDataInicio ? this.relatorioDataInicio.toISOString().split('T')[0] : null,
       data_fim: this.relatorioDataFim ? this.relatorioDataFim.toISOString().split('T')[0] : null,
       id_empresa: this.relatorioEmpresa || null,
       id_colaborador: this.relatorioColaborador || null,
-      id_categoria: null
+      id_categoria: null,
+      tipo_importacao: 'IA_DESPESAS'
     };
 
     this.importacoesService.obterDadosDashboardAnalitico(filtros).subscribe({

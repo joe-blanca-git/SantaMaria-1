@@ -89,6 +89,7 @@ export class ImportacoesService {
     if (filtros.id_empresa) params = params.set('id_empresa', filtros.id_empresa.toString());
     if (filtros.id_colaborador) params = params.set('id_colaborador', filtros.id_colaborador.toString());
     if (filtros.id_categoria) params = params.set('id_categoria', filtros.id_categoria.toString());
+    if (filtros.tipo_importacao) params = params.set('tipo_importacao', filtros.tipo_importacao);
     
     return this.http.get<any>(`${this.apiUrl}/dashboard`, { params });
   }
@@ -100,6 +101,7 @@ export class ImportacoesService {
     if (filtros.id_empresa) params = params.set('id_empresa', filtros.id_empresa.toString());
     if (filtros.id_colaborador) params = params.set('id_colaborador', filtros.id_colaborador.toString());
     if (filtros.id_categoria) params = params.set('id_categoria', filtros.id_categoria.toString());
+    if (filtros.tipo_importacao) params = params.set('tipo_importacao', filtros.tipo_importacao);
     
     return this.http.get<any>(`${this.apiUrl}/dashboard/analitico`, { params });
   }
