@@ -1,333 +1,115 @@
-<div class="inadimplencia-layout-container">
-  
-  <!-- Left Column: Module Sidebar Navigation -->
-  <aside class="inadimplencia-sidebar">
-    <div class="logo-area">
-      <img src="images/logo.jpg" class="logo-img" alt="Logo Santa Maria">
-      <div class="logo-text">
-        <span class="company-name">Santa Maria</span>
-        <span class="module-title">Inadimplência</span>
-      </div>
-    </div>
-
-    <nav class="sidebar-nav">
-      <!-- Section: Análises -->
-      <div class="menu-section">
-        <div class="section-title">Análises</div>
-        @for (menu of analisesMenus(); track menu.id) {
-          <button 
-            class="nav-item" 
-            [class.active]="activeMenu() === menu.id"
-            (click)="selectMenu(menu.id)">
-            <i [class]="menu.icon"></i>
-            <span>{{ menu.label }}</span>
-          </button>
-        }
-      </div>
-
-      <!-- Section: Administração -->
-      <div class="menu-section">
-        <div class="section-title">Administração</div>
-        @for (menu of administracaoMenus(); track menu.id) {
-          <button 
-            class="nav-item" 
-            [class.active]="activeMenu() === menu.id"
-            (click)="selectMenu(menu.id)">
-            <i [class]="menu.icon"></i>
-            <span>{{ menu.label }}</span>
-          </button>
-        }
-      </div>
-    </nav>
-  </aside>
-
-  <!-- Right Column: Panel Content Area -->
-  <main class="content-area">
+<div class="page-container">
+  <div class="main-layout">
     
-    <!-- PANEL: DASHBOARD -->
-    @if (activeMenu() === 'dashboard') {
-      <div class="panel-container">
-        <header class="panel-header">
-          <h2>Dashboard Geral</h2>
-          <span class="panel-description">Visão consolidada de recebíveis, indicadores de inadimplência e aging list.</span>
-        </header>
-        
-        <div class="dashboard-placeholder">
-          <div class="placeholder-icon">
-            <i class="fa-solid fa-chart-pie"></i>
-          </div>
-          <h3>Dashboard de Análises</h3>
-          <p>Esta área exibirá os principais gráficos consolidando a carteira de inadimplência da empresa.</p>
-        </div>
+    <!-- Sidebar -->
+    <aside class="main-sidebar" [class.collapsed]="isSidebarCollapsed">
+      <div class="sidebar-header d-flex justify-content-end mb-3 pb-2 border-bottom">
+        <button class="btn btn-sm text-muted sidebar-toggle" (click)="toggleSidebar()"
+          style="background: transparent; border: none; padding: 0.25rem 0.5rem; border-radius: 6px;">
+          <i class="fa-solid" [ngClass]="isSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'"></i>
+        </button>
       </div>
-    }
+      
+      <ul class="main-nav">
+        <li>
+          <button class="main-nav-link" [class.active]="activeTab === 'dashboards'" (click)="setActiveTab('dashboards')" title="Dashboards">
+            <i class="fa-solid fa-chart-line"></i> <span class="nav-text">Dashboards</span>
+          </button>
+        </li>
+        <li>
+          <button class="main-nav-link" [class.active]="activeTab === 'inadimplencia'" (click)="setActiveTab('inadimplencia')" title="Inadimplência">
+            <i class="fa-solid fa-file-invoice-dollar"></i> <span class="nav-text">Inadimplência</span>
+          </button>
+        </li>
+        <li>
+          <button class="main-nav-link" [class.active]="activeTab === 'representantes'" (click)="setActiveTab('representantes')" title="Representantes">
+            <i class="fa-solid fa-user-tie"></i> <span class="nav-text">Representantes</span>
+          </button>
+        </li>
+        <li>
+          <button class="main-nav-link" [class.active]="activeTab === 'gerentes'" (click)="setActiveTab('gerentes')" title="Gerentes">
+            <i class="fa-solid fa-user-shield"></i> <span class="nav-text">Gerentes</span>
+          </button>
+        </li>
+        <li>
+          <button class="main-nav-link" [class.active]="activeTab === 'pendencias'" (click)="setActiveTab('pendencias')" title="Pendências">
+            <i class="fa-solid fa-triangle-exclamation"></i> <span class="nav-text">Pendências</span>
+          </button>
+        </li>
+      </ul>
+    </aside>
 
-    <!-- PANEL: INADIMPLENCIA -->
-    @else if (activeMenu() === 'inadimplencia') {
-      <div class="panel-container">
-        <header class="panel-header">
-          <h2>Inadimplência</h2>
-          <span class="panel-description">Filtros avançados e listagem detalhada de títulos vencidos e em atraso.</span>
-        </header>
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="tab-content custom-tab-content">
         
-        <div class="dashboard-placeholder">
-          <div class="placeholder-icon">
-            <i class="fa-solid fa-chart-line"></i>
-          </div>
-          <h3>Análise de Evolução</h3>
-          <p>Exibição e filtros das curvas de vencimento e evolução temporal de atrasos.</p>
-        </div>
-      </div>
-    }
-
-    <!-- PANEL: CLIENTES -->
-    @else if (activeMenu() === 'clientes') {
-      <div class="panel-container">
-        <header class="panel-header">
-          <h2>Clientes</h2>
-          <span class="panel-description">Histórico individual por cliente, contatos de cobrança e situação cadastral.</span>
-        </header>
-        
-        <div class="dashboard-placeholder">
-          <div class="placeholder-icon">
-            <i class="fa-solid fa-users"></i>
-          </div>
-          <h3>Ficha de Clientes</h3>
-          <p>Listagem de clientes inadimplentes com suas respectivas informações financeiras agregadas.</p>
-        </div>
-      </div>
-    }
-
-    <!-- PANEL: REINCIDENTES -->
-    @else if (activeMenu() === 'reincidentes') {
-      <div class="panel-container">
-        <header class="panel-header">
-          <h2>Reincidentes</h2>
-          <span class="panel-description">Identificação de clientes recorrentes na inadimplência e bloqueio comercial.</span>
-        </header>
-        
-        <div class="dashboard-placeholder">
-          <div class="placeholder-icon">
-            <i class="fa-solid fa-triangle-exclamation"></i>
-          </div>
-          <h3>Análise de Reincidência</h3>
-          <p>Gestão e auditoria de devedores com reincidências consecutivas nos últimos 12 meses.</p>
-        </div>
-      </div>
-    }
-
-    <!-- PANEL: REPRESENTANTES -->
-    @else if (activeMenu() === 'representantes') {
-      <div class="panel-container">
-        <header class="panel-header">
-          <h2>Representantes</h2>
-          <span class="panel-description">Taxa de inadimplência e adimplemento segmentada pelas carteiras comerciais.</span>
-        </header>
-        
-        <div class="dashboard-placeholder">
-          <div class="placeholder-icon">
-            <i class="fa-regular fa-address-card"></i>
-          </div>
-          <h3>Carteira de Representantes</h3>
-          <p>Filtros e índices de inadimplência por representante e impacto no cálculo de comissões.</p>
-        </div>
-      </div>
-    }
-
-    <!-- PANEL: GERENTES -->
-    @else if (activeMenu() === 'gerentes') {
-      <div class="panel-container">
-        <header class="panel-header">
-          <h2>Gerentes</h2>
-          <span class="panel-description">Acompanhamento e metas de recuperação de crédito por gerente de conta.</span>
-        </header>
-        
-        <div class="dashboard-placeholder">
-          <div class="placeholder-icon">
-            <i class="fa-solid fa-briefcase"></i>
-          </div>
-          <h3>Alçadas e Metas de Recuperação</h3>
-          <p>Painel de acompanhamento de metas regionais e liberação de propostas de acordo.</p>
-        </div>
-      </div>
-    }
-
-    <!-- PANEL: ATUALIZACAO -->
-    @else if (activeMenu() === 'atualizacao') {
-      <div class="panel-container animate-fade-in">
-        <header class="panel-header">
-          <h2>Atualização de Dados</h2>
-          <span class="panel-description">Importe planilhas de dados para processar a inadimplência e atualizar a carteira de recebíveis.</span>
-        </header>
-        
-        <!-- Two Excel Import Buttons Card -->
-        <app-card [padding]="true" class="import-card-premium">
-          <div class="import-card-header">
-            <div class="import-card-icon">
-              <i class="fa-regular fa-file-excel"></i>
+        <!-- Tab Dashboards -->
+        <div class="tab-pane fade" [class.show]="activeTab === 'dashboards'" [class.active]="activeTab === 'dashboards'" role="tabpanel">
+          <div class="config-layout">
+            <div class="dashboard-header border-bottom">
+              <h3 class="mb-0 p-3" style="font-size: 1.5rem; font-weight: 600;">Dashboards</h3>
             </div>
-            <div class="import-card-meta">
-              <h3>Importação de Planilhas</h3>
-              <p>Selecione uma das opções abaixo para importar arquivos Excel (.xlsx) contendo os dados brutos de inadimplências.</p>
+            <div class="p-3">
+              <!-- Conteúdo de Dashboards virá aqui -->
+              <p class="text-muted">Conteúdo de Dashboards</p>
             </div>
           </div>
+        </div>
 
-          <div class="import-actions-row">
-            <app-button 
-              variant="primary" 
-              icon="fa-solid fa-file-invoice-dollar" 
-              (clicked)="triggerImport('carteira')">
-              Importar Carteira de Inadimplentes
-            </app-button>
-            
-            <app-button 
-              variant="primary" 
-              icon="fa-solid fa-clock-rotate-left" 
-              (clicked)="triggerImport('historico')">
-              Importar Histórico de Cobrança
-            </app-button>
-          </div>
-        </app-card>
-
-        <!-- Import History Table (SaaS Style) -->
-        <div class="history-section mt-5">
-          <h3 class="section-title-premium">Últimas Importações Realizadas</h3>
-          
-          <div class="table-container mt-3">
-            <table class="saas-table">
-              <thead>
-                <tr>
-                  <th style="width: 15%;" class="text-center">Data/Hora</th>
-                  <th style="width: 30%;">Nome do Arquivo</th>
-                  <th style="width: 20%;">Tipo de Importação</th>
-                  <th style="width: 15%; text-align: right;">Linhas Processadas</th>
-                  <th style="width: 10%; text-align: center;">Status</th>
-                  <th style="width: 10%;">Operador</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (history of importHistory(); track history.date) {
-                  <tr>
-                    <td class="text-center font-monospace small">{{ history.date }}</td>
-                    <td>
-                      <span class="file-name-cell">
-                        <i class="fa-regular fa-file-excel text-success me-2"></i>
-                        {{ history.fileName }}
-                      </span>
-                    </td>
-                    <td>{{ history.type }}</td>
-                    <td class="text-end font-tabular-nums">{{ history.rowCount }}</td>
-                    <td class="text-center">
-                      <app-badge variant="success" text="Concluído"></app-badge>
-                    </td>
-                    <td class="text-muted small">{{ history.user }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
+        <!-- Tab Inadimplência -->
+        <div class="tab-pane fade" [class.show]="activeTab === 'inadimplencia'" [class.active]="activeTab === 'inadimplencia'" role="tabpanel">
+          <div class="config-layout">
+            <div class="dashboard-header border-bottom">
+              <h3 class="mb-0 p-3" style="font-size: 1.5rem; font-weight: 600;">Inadimplência</h3>
+            </div>
+            <div class="p-3">
+              <!-- Conteúdo de Inadimplência virá aqui -->
+              <p class="text-muted">Conteúdo de Inadimplência</p>
+            </div>
           </div>
         </div>
+
+        <!-- Tab Representantes -->
+        <div class="tab-pane fade" [class.show]="activeTab === 'representantes'" [class.active]="activeTab === 'representantes'" role="tabpanel">
+          <div class="config-layout">
+            <div class="dashboard-header border-bottom">
+              <h3 class="mb-0 p-3" style="font-size: 1.5rem; font-weight: 600;">Representantes</h3>
+            </div>
+            <div class="p-3">
+              <!-- Conteúdo de Representantes virá aqui -->
+              <p class="text-muted">Conteúdo de Representantes</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Gerentes -->
+        <div class="tab-pane fade" [class.show]="activeTab === 'gerentes'" [class.active]="activeTab === 'gerentes'" role="tabpanel">
+          <div class="config-layout">
+            <div class="dashboard-header border-bottom">
+              <h3 class="mb-0 p-3" style="font-size: 1.5rem; font-weight: 600;">Gerentes</h3>
+            </div>
+            <div class="p-3">
+              <!-- Conteúdo de Gerentes virá aqui -->
+              <p class="text-muted">Conteúdo de Gerentes</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Pendências -->
+        <div class="tab-pane fade" [class.show]="activeTab === 'pendencias'" [class.active]="activeTab === 'pendencias'" role="tabpanel">
+          <div class="config-layout">
+            <div class="dashboard-header border-bottom">
+              <h3 class="mb-0 p-3" style="font-size: 1.5rem; font-weight: 600;">Pendências</h3>
+            </div>
+            <div class="p-3">
+              <!-- Conteúdo de Pendências virá aqui -->
+              <app-pendencias></app-pendencias>
+            </div>
+          </div>
+        </div>
+
       </div>
-    }
-  </main>
+    </main>
 
-  <!-- Hidden Inputs for Excel Files -->
-  <input type="file" #carteiraFileInput style="display: none;" accept=".xlsx, .xls, .csv" (change)="onFileSelected($event)">
-  <input type="file" #historicoFileInput style="display: none;" accept=".xlsx, .xls, .csv" (change)="onFileSelected($event)">
-
-  <!-- Import Processing Modal -->
-  <app-modal 
-    [isOpen]="isImportModalOpen()" 
-    [title]="activeImportType() === 'carteira' ? 'Importar Carteira de Inadimplentes' : 'Importar Histórico de Cobrança'" 
-    size="sm" 
-    (closed)="!isProcessing() ? closeModal() : null">
-    
-    <div class="text-center py-3">
-      
-      <!-- STEP: FILE SELECTED / READY TO PROCESS -->
-      @if (processingStep() === 0) {
-        <div class="text-primary mb-3">
-          <i class="fa-regular fa-file-excel fs-1 text-success"></i>
-        </div>
-        <h4 class="mb-2">Confirmar Importação</h4>
-        <p class="text-muted small">
-          Arquivo carregado: <strong>{{ selectedFile()?.name }}</strong>
-        </p>
-        <p class="text-muted small px-3">
-          Deseja iniciar o processamento desse arquivo? A carteira será atualizada e conciliada automaticamente.
-        </p>
-        
-        <div class="mt-4 d-flex justify-content-center gap-2">
-          <app-button variant="secondary" (clicked)="closeModal()">
-            Cancelar
-          </app-button>
-          <app-button variant="primary" (clicked)="processFile()">
-            Importar e Processar
-          </app-button>
-        </div>
-      }
-      
-      <!-- STEP: PROCESSING / LOADING -->
-      @else if (isProcessing()) {
-        <div class="processing-spinner mb-3">
-          <app-loading type="spinner" size="lg"></app-loading>
-        </div>
-        <h4 class="mb-2">Processando planilha...</h4>
-        <div class="progress-steps-list text-start mx-auto mt-4 px-3" style="max-width: 320px;">
-          <div class="step-item" [class.active]="processingStep() === 1" [class.done]="processingStep() > 1">
-            <i class="fa-solid" [class.fa-spinner]="processingStep() === 1" [class.fa-circle-notch]="processingStep() === 1" [class.fa-spin]="processingStep() === 1" [class.fa-check]="processingStep() > 1"></i>
-            <span>Validação do arquivo Excel</span>
-          </div>
-          <div class="step-item" [class.active]="processingStep() === 2" [class.done]="processingStep() > 2">
-            <i class="fa-solid" [class.fa-spinner]="processingStep() === 2" [class.fa-circle-notch]="processingStep() === 2" [class.fa-spin]="processingStep() === 2" [class.fa-check]="processingStep() > 2" [class.fa-circle]="processingStep() < 2"></i>
-            <span>Tratamento cadastral</span>
-          </div>
-          <div class="step-item" [class.active]="processingStep() === 3" [class.done]="processingStep() > 3">
-            <i class="fa-solid" [class.fa-spinner]="processingStep() === 3" [class.fa-circle-notch]="processingStep() === 3" [class.fa-spin]="processingStep() === 3" [class.fa-check]="processingStep() > 3" [class.fa-circle]="processingStep() < 3"></i>
-            <span>Conciliação e registro final</span>
-          </div>
-        </div>
-        <p class="text-muted small mt-4 px-3 italic text-center">
-          {{ processingText() }}
-        </p>
-      }
-      
-      <!-- STEP: SUCCESS / REPORT -->
-      @else if (processingStep() === 4) {
-        <div class="text-success mb-3">
-          <i class="fa-solid fa-circle-check fs-1"></i>
-        </div>
-        <h4 class="mb-2 text-success">Importação Concluída</h4>
-        <p class="text-muted small px-3">
-          O arquivo foi processado com sucesso. A base de dados de inadimplências foi atualizada.
-        </p>
-        
-        <div class="import-summary-box mx-auto my-4 p-3 bg-light rounded text-start" style="max-width: 320px;">
-          <div class="summary-row d-flex justify-content-between mb-2">
-            <span class="text-secondary small">Total Importado:</span>
-            <span class="fw-semibold">{{ importedCount() }} registros</span>
-          </div>
-          <div class="summary-row d-flex justify-content-between">
-            <span class="text-secondary small">Divergências Encontradas:</span>
-            @if (divergencesCount() > 0) {
-              <span class="text-warning fw-semibold d-flex align-items-center gap-1">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                {{ divergencesCount() }} pendentes
-              </span>
-            } @else {
-              <span class="text-success fw-semibold">Nenhuma</span>
-            }
-          </div>
-        </div>
-
-        <div class="mt-4">
-          <app-button variant="secondary" (clicked)="closeModal()">
-            Fechar Relatório
-          </app-button>
-        </div>
-      }
-
-    </div>
-  </app-modal>
-
+  </div>
 </div>

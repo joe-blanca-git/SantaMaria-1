@@ -2684,7 +2684,7 @@ def _parse_banco_do_brasil(texto: str) -> list:
     a extração ignora esse trecho e captura apenas nome + situação + valor final.
     """
     linha_regex = re.compile(
-        r'^(?P<nome>.+?)\s+(?P<situacao>PENDENTE|REJEITADO)\s+.+?\s+(?P<valor>\d{1,3}(?:\.\d{3})*,\d{2})\s*$'
+        r'^(?P<nome>.+)\s*(?P<situacao>PENDENTE|REJEITADO)\s+.*?(?P<valor>\d{1,3}(?:\.\d{3})*,\d{2})\s*$'
     )
     entradas = []
     for linha in texto.splitlines():

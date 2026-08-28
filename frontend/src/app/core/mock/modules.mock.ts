@@ -51,7 +51,7 @@ export const MOCK_MODULES: AppModule[] = [
     name: 'Configurações e Cadastros',
     icon: 'fa-solid fa-gear',
     route: '/configuracoes-cadastros',
-    description: 'Gestão de usuários, acessos e configurações globais.',
+    description: 'Gestão de usuários e acessos.',
     isActive: true,
     category: 'Administrativo'
   }
