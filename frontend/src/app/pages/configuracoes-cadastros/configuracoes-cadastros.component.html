@@ -812,19 +812,35 @@
 <app-modal [isOpen]="isEmpresaModalOpen"
   [title]="empresaModalMode === 'create' ? 'Cadastrar Empresa' : 'Editar Empresa'" (closed)="closeEmpresaModal()"
   size="md">
-  <div class="form-container py-2">
+  <div class="form-container py-2 d-flex flex-column" style="min-height: 420px;">
     <div class="mb-3">
       <label class="form-label text-muted small fw-medium">NOME DA EMPRESA</label>
       <input type="text" class="form-control" placeholder="Ex: Cartão Corporativo Itaú" [(ngModel)]="novaEmpresa.nome">
     </div>
 
-    <div class="mb-4">
+    <div class="mb-3">
       <label class="form-label text-muted small fw-medium">DESCRIÇÃO</label>
       <textarea class="form-control" rows="3" placeholder="Ex: Faturas do cartão de crédito corporativo..."
         [(ngModel)]="novaEmpresa.descricao"></textarea>
     </div>
+    
+    <div class="mb-4">
+      <label class="form-label text-muted small fw-medium">MÓDULOS PERMITIDOS</label>
+      <ng-select [items]="modulosOptions"
+         bindLabel="nome"
+         bindValue="id"
+         [multiple]="true"
+         [closeOnSelect]="false"
+         appendTo="body"
+         placeholder="Selecione os módulos (opcional)"
+         [(ngModel)]="novaEmpresa.modulo_ids">
+         <ng-template ng-option-tmp let-item="item" let-item$="item$" let-index="index">
+           <input type="checkbox" [checked]="item$.selected" class="me-2" /> {{item.nome}}
+         </ng-template>
+      </ng-select>
+    </div>
 
-    <div class="d-flex justify-content-end gap-2 pt-3 border-top">
+    <div class="mt-auto d-flex justify-content-end gap-2 pt-3 border-top">
       <app-button variant="ghost" (clicked)="closeEmpresaModal()">Cancelar</app-button>
       <app-button variant="primary" (clicked)="salvarEmpresa()" [disabled]="!novaEmpresa.nome || isSalvandoEmpresa">
         <i class="fa-solid fa-spinner fa-spin me-2" *ngIf="isSalvandoEmpresa"></i>

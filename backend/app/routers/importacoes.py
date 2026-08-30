@@ -4,14 +4,18 @@ from sqlalchemy.orm import Session
 import io
 import pandas as pd
 from app.core.database import get_db
+from app.api.deps import get_current_user
+from app.models.user import User
 from app.schemas.importacao import ImportacaoPaginatedResponse
 from app.services.importacao_service import ImportacaoService
 from app.services.ia_service import IAService
 from app.services.dashboard_service import DashboardService
+from app.services.inadimplencia_service import InadimplenciaService
 from app.repositories.categoria_repository import CategoriaRepository
 from app.repositories.colaborador_repository import ColaboradorRepository
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import date
 
 router = APIRouter()
 
@@ -113,6 +117,153 @@ def salvar_movimentacoes_ia(
         return resultado
     except HTTPException as he:
         raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/inadimplencia/pendencias")
+def listar_pendencias_inadimplencia(
+    data_inicio: Optional[date] = Query(None, description="Filtra vencimento >= data_inicio (YYYY-MM-DD)"),
+    data_fim: Optional[date] = Query(None, description="Filtra vencimento <= data_fim (YYYY-MM-DD)"),
+    db: Session = Depends(get_db)
+):
+    try:
+        return InadimplenciaService(db).listar_pendencias(data_inicio, data_fim)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/inadimplencia/janela-regra-dia")
+def obter_janela_regra_dia_inadimplencia(db: Session = Depends(get_db)):
+    try:
+        return InadimplenciaService(db).obter_janela_regra_dia()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class AlterarFasePayload(BaseModel):
+    fase: str
+
+class AlterarStatusPayload(BaseModel):
+    status: str
+
+@router.patch("/inadimplencia/pendencias/{id_nf}/fase")
+def alterar_fase_pendencia(
+    id_nf: int,
+    payload: AlterarFasePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        return InadimplenciaService(db).alterar_fase(id_nf, payload.fase, current_user.iduser)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except LookupError as le:
+        raise HTTPException(status_code=404, detail=str(le))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.patch("/inadimplencia/pendencias/{id_nf}/status")
+def alterar_status_pendencia(
+    id_nf: int,
+    payload: AlterarStatusPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        return InadimplenciaService(db).alterar_status(id_nf, payload.status, current_user.iduser)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except LookupError as le:
+        raise HTTPException(status_code=404, detail=str(le))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class CriarTratativaPayload(BaseModel):
+    conteudo: str
+
+class EditarTratativaPayload(BaseModel):
+    conteudo: str
+
+@router.get("/inadimplencia/pendencias/{id_nf}/tratativas")
+def listar_tratativas_pendencia(id_nf: int, db: Session = Depends(get_db)):
+    try:
+        return InadimplenciaService(db).listar_tratativas(id_nf)
+    except LookupError as le:
+        raise HTTPException(status_code=404, detail=str(le))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/inadimplencia/pendencias/{id_nf}/tratativas")
+def criar_tratativa_pendencia(
+    id_nf: int,
+    payload: CriarTratativaPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        return InadimplenciaService(db).criar_tratativa(id_nf, payload.conteudo, current_user.iduser)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except LookupError as le:
+        raise HTTPException(status_code=404, detail=str(le))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/inadimplencia/tratativas/{id_tratativa}")
+def editar_tratativa_pendencia(id_tratativa: int, payload: EditarTratativaPayload, db: Session = Depends(get_db)):
+    try:
+        return InadimplenciaService(db).editar_tratativa(id_tratativa, payload.conteudo)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except LookupError as le:
+        raise HTTPException(status_code=404, detail=str(le))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class CriarHistoricoPayload(BaseModel):
+    tipo: str
+    observacao: str
+
+@router.get("/inadimplencia/pendencias/{id_nf}/historico")
+def listar_historico_pendencia(id_nf: int, db: Session = Depends(get_db)):
+    try:
+        return InadimplenciaService(db).listar_historico(id_nf)
+    except LookupError as le:
+        raise HTTPException(status_code=404, detail=str(le))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/inadimplencia/pendencias/{id_nf}/historico")
+def criar_historico_pendencia(
+    id_nf: int,
+    payload: CriarHistoricoPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        return InadimplenciaService(db).registrar_historico(id_nf, payload.tipo, payload.observacao, current_user.iduser)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except LookupError as le:
+        raise HTTPException(status_code=404, detail=str(le))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/inadimplencia/importar-pendencias")
+async def importar_pendencias_inadimplencia(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo inválido")
+
+    try:
+        conteudo = await file.read()
+        resultado = InadimplenciaService(db).importar_pendencias(conteudo, file.filename, current_user.iduser)
+        return resultado
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -459,7 +610,7 @@ async def conciliar_composicao_ws(wb, acr_file, rows_to_export, font_header, fon
     ws2.column_dimensions['G'].width = 18
 
 @router.post("/atacadao/extrair")
-async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db), idUserInc: Optional[int] = Form(None)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Arquivo inválido")
         
@@ -644,7 +795,7 @@ async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = 
         filename = file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Atacadão")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Atacadão", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -660,7 +811,7 @@ async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = 
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sendas/extrair")
-async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db), idUserInc: Optional[int] = Form(None)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Arquivo inválido")
         
@@ -889,7 +1040,7 @@ async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = Fi
         filename = file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Sendas")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Sendas", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -908,7 +1059,8 @@ async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = Fi
 async def conciliar_atacadao(
     html_file: UploadFile = File(...),
     csv_file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     if not html_file.filename or not csv_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1161,7 +1313,7 @@ async def conciliar_atacadao(
         filename = html_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Atacadão")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Atacadão", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -1180,7 +1332,8 @@ async def conciliar_atacadao(
 async def conciliar_sendas(
     sendas_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     if not sendas_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1438,7 +1591,7 @@ async def conciliar_sendas(
         filename = sendas_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Sendas")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Sendas", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -1457,7 +1610,8 @@ async def conciliar_sendas(
 async def conciliar_martminas(
     martminas_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     if not martminas_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1719,7 +1873,7 @@ async def conciliar_martminas(
         filename = martminas_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mart Minas")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mart Minas", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -1738,7 +1892,8 @@ async def conciliar_martminas(
 async def conciliar_savegnago(
     savegnago_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     if not savegnago_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -2079,7 +2234,7 @@ async def conciliar_savegnago(
         filename = savegnago_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Savegnago")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Savegnago", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -2100,7 +2255,8 @@ async def conciliar_savegnago(
 async def conciliar_mateus(
     mateus_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     if not mateus_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -2317,7 +2473,7 @@ async def conciliar_mateus(
         filename = mateus_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mateus")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mateus", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -2338,7 +2494,8 @@ async def conciliar_mateus(
 async def conciliar_drogaraia(
     drogaraia_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     if not drogaraia_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -2581,7 +2738,7 @@ async def conciliar_drogaraia(
         filename = drogaraia_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Droga Raia")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Droga Raia", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -2885,7 +3042,8 @@ def _gravar_codigos_na_planilha(conteudo_planilha: bytes, sheet_xml_path: str, c
 async def conciliar_bancos(
     planilha: UploadFile = File(...),
     extratos: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     try:
         import openpyxl
@@ -3102,7 +3260,7 @@ async def conciliar_bancos(
         # Registra a importação para aparecer no histórico da tela — sem gravar nenhuma
         # movimentação, só o registro da importação em si (como já é feito nas outras
         # rotas de conciliação/extração deste arquivo).
-        ImportacaoService(db).registrar_importacao(original_name, extensao, "Conciliação Bancária")
+        ImportacaoService(db).registrar_importacao(original_name, extensao, "Conciliação Bancária", id_user_inc=idUserInc)
 
         nome_encoded = quote(original_name)
         return StreamingResponse(
@@ -3242,6 +3400,7 @@ class ConfirmarImportacaoSorrisoPayload(BaseModel):
     nomeArquivo: str
     titulares: List[TitularConfirmar]
     idEmpresa: Optional[int] = None
+    idUserInc: Optional[int] = None
 
 @router.post("/plano-saude/sorriso/confirmar")
 def confirmar_importacao_plano_saude_sorriso(
@@ -3313,7 +3472,8 @@ def confirmar_importacao_plano_saude_sorriso(
             nomeArquivo=payload.nomeArquivo,
             extensaoArquivo=extensao,
             idEmpresa=emp.idEmpresas,
-            tipo=tipo_importacao
+            tipo=tipo_importacao,
+            idUserInc=payload.idUserInc
         )
         db.add(nova_importacao)
         db.flush() # Gerar idImportacoes
@@ -3553,6 +3713,7 @@ class ConfirmarImportacaoUnimedPayload(BaseModel):
     nomeArquivo: str
     titulares: List[TitularConfirmarUnimed]
     idEmpresa: Optional[int] = None
+    idUserInc: Optional[int] = None
 
 @router.post("/plano-saude/unimed-odonto/confirmar")
 def confirmar_importacao_plano_saude_unimed_odonto(
@@ -3624,7 +3785,8 @@ def confirmar_importacao_plano_saude_unimed_odonto(
             nomeArquivo=payload.nomeArquivo,
             extensaoArquivo=extensao,
             idEmpresa=emp.idEmpresas,
-            tipo=tipo_importacao
+            tipo=tipo_importacao,
+            idUserInc=payload.idUserInc
         )
         db.add(nova_importacao)
         db.flush()
@@ -3754,7 +3916,8 @@ def exportar_unimed_odonto_excel(
 async def conciliar_cema(
     cema_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idUserInc: Optional[int] = Form(None)
 ):
     if not cema_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -3986,7 +4149,7 @@ async def conciliar_cema(
         filename = cema_file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Cema")
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Cema", id_user_inc=idUserInc)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',

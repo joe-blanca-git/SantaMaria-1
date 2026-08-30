@@ -28,3 +28,4 @@ class DespesaIAPayload(BaseModel):
 class SalvarImportacaoIAPayload(BaseModel):
     nomeArquivo: str
     despesas: List[DespesaIAPayload]
+    idUserInc: Optional[int] = None

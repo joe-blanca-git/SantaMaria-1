@@ -30,7 +30,8 @@ class MovimentacaoService:
             nomeArquivo=payload.nomeArquivo,
             extensaoArquivo=extensao,
             idEmpresa=id_empresa_importacao,
-            tipo="IA_DESPESAS"
+            tipo="IA_DESPESAS",
+            idUserInc=payload.idUserInc
         )
         self.db.add(nova_importacao)
         self.db.flush() # Para gerar o idImportacoes

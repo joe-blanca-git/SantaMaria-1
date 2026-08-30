@@ -87,6 +87,7 @@
                       <th>Empresa</th>
                       <th>Tipo</th>
                       <th>Data</th>
+                      <th>Usuário</th>
                       <th class="text-end">Valor Total</th>
                       <th class="text-center">Ações</th>
                     </tr>
@@ -103,6 +104,11 @@
                       <td>{{ item.empresa?.nome || item.tipo.split(' - ')[1] || '-' }}</td>
                       <td><span class="company-badge">{{ item.tipo }}</span></td>
                       <td>{{ item.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                      <td>
+                        <span class="text-muted small fw-medium">
+                          <i class="fa-regular fa-user me-1"></i>{{ item.autor || '-' }}
+                        </span>
+                      </td>
                       <td class="text-end amount-cell">{{ item.valor_total ? (item.valor_total | currency:'BRL') : '-'
                         }}</td>
                       <td>
@@ -117,7 +123,7 @@
                     }
                     @if (historicoComposicoes().length === 0) {
                     <tr>
-                      <td colspan="6" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
+                      <td colspan="7" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
                     </tr>
                     }
                   </tbody>
@@ -178,6 +184,7 @@
                       <th>Empresa</th>
                       <th>Tipo</th>
                       <th>Data</th>
+                      <th>Usuário</th>
                       <th class="text-end">Valor Total</th>
                       <th class="text-center">Ações</th>
                     </tr>
@@ -194,6 +201,11 @@
                       <td>{{ item.empresa?.nome || item.tipo.split(' - ')[1] || '-' }}</td>
                       <td><span class="company-badge">{{ item.tipo }}</span></td>
                       <td>{{ item.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                      <td>
+                        <span class="text-muted small fw-medium">
+                          <i class="fa-regular fa-user me-1"></i>{{ item.autor || '-' }}
+                        </span>
+                      </td>
                       <td class="text-end amount-cell">{{ item.valor_total ? (item.valor_total | currency:'BRL') : '-'
                         }}</td>
                       <td>
@@ -208,7 +220,7 @@
                     }
                     @if (historicoProrrogacoes().length === 0) {
                     <tr>
-                      <td colspan="6" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
+                      <td colspan="7" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
                     </tr>
                     }
                   </tbody>

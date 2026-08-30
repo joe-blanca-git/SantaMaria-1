@@ -7,6 +7,7 @@ import { ButtonComponent } from '../../shared/components/button/button.component
 import { ModalComponent } from '../../shared/components/modal/modal.component';
 import { LoadingComponent } from '../../shared/components/loading/loading.component';
 import { ConfirmModalComponent } from '../../shared/components/confirm-modal/confirm-modal.component';
+import { IAuthService } from '../../core/interfaces/auth.service';
 import { ImportacoesService, Importacao } from '../../core/services/importacoes.service';
 
 export interface MenuItem {
@@ -32,7 +33,8 @@ export interface MenuItem {
   styleUrl: './conciliacao-pagamentos.component.scss'
 })
 export class ConciliacaoPagamentosComponent implements OnInit {
-  private importacoesService = inject(ImportacoesService);
+  importacoesService = inject(ImportacoesService);
+  authService = inject(IAuthService);
 
   // Confirm/Alert Modal State
   isConfirmModalOpen = false;
@@ -236,7 +238,7 @@ export class ConciliacaoPagamentosComponent implements OnInit {
     this.processingStep.set(1);
     this.processingText.set('Enviando planilha e extratos bancários...');
 
-    this.importacoesService.conciliarBancos(planilha, extratos).subscribe({
+    this.importacoesService.conciliarBancos(planilha, extratos, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.isProcessing.set(false);
 

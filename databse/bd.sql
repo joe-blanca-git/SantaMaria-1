@@ -245,6 +245,87 @@ AUTO_INCREMENT = 316
 DEFAULT CHARACTER SET = utf8mb3;
 
 
+-- -----------------------------------------------------
+-- Table `stamariabd`.`clientes`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `stamariabd`.`clientes` (
+  `idCliente` INT NOT NULL AUTO_INCREMENT,
+  `codigo` INT NOT NULL,
+  `nome` VARCHAR(150) NOT NULL,
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NULL DEFAULT NULL,
+  PRIMARY KEY (`idCliente`),
+  UNIQUE INDEX `codigo_UNIQUE` (`codigo` ASC) VISIBLE)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8mb3;
+
+
+-- -----------------------------------------------------
+-- Table `stamariabd`.`matrizCliente`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `stamariabd`.`matrizCliente` (
+  `idMatrizCliente` INT NOT NULL AUTO_INCREMENT,
+  `codigo` INT NOT NULL,
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NULL DEFAULT NULL,
+  PRIMARY KEY (`idMatrizCliente`),
+  UNIQUE INDEX `codigo_UNIQUE` (`codigo` ASC) VISIBLE)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8mb3;
+
+
+-- -----------------------------------------------------
+-- Table `stamariabd`.`nfpendencias`
+-- Importação de pendências (módulo Inadimplência). Cada linha representa um
+-- título elegível na data da importação, já classificado em fase/status
+-- segundo as regras de negócio definidas para o relatório "Base pendencias".
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `stamariabd`.`nfpendencias` (
+  `idNfPendencias` INT NOT NULL AUTO_INCREMENT,
+  `idImportacao` INT NOT NULL,
+  `idCliente` INT NOT NULL,
+  `idMatrizCliente` INT NULL DEFAULT NULL,
+  `estabelecimento` INT NULL DEFAULT NULL,
+  `especie` VARCHAR(10) NOT NULL,
+  `serie` VARCHAR(10) NULL DEFAULT NULL,
+  `titulo` VARCHAR(20) NULL DEFAULT NULL,
+  `parcela` VARCHAR(10) NULL DEFAULT NULL,
+  `tipoPedido` VARCHAR(10) NULL DEFAULT NULL,
+  `carteira` VARCHAR(10) NULL DEFAULT NULL,
+  `dataEmissao` DATE NULL DEFAULT NULL,
+  `dataEntrega` DATE NULL DEFAULT NULL,
+  `dataVencimento` DATE NOT NULL,
+  `valorOriginal` FLOAT(18,2) NULL DEFAULT NULL,
+  `saldo` FLOAT(18,2) NULL DEFAULT NULL,
+  `dias` INT NULL DEFAULT NULL,
+  `cidade` VARCHAR(100) NULL DEFAULT NULL,
+  `uf` VARCHAR(2) NULL DEFAULT NULL,
+  `fase` VARCHAR(30) NOT NULL,
+  `status` VARCHAR(30) NOT NULL,
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NULL DEFAULT NULL,
+  PRIMARY KEY (`idNfPendencias`),
+  INDEX `nfImportacao_idx` (`idImportacao` ASC) VISIBLE,
+  INDEX `nfCliente_idx` (`idCliente` ASC) VISIBLE,
+  INDEX `nfMatrizCliente_idx` (`idMatrizCliente` ASC) VISIBLE,
+  INDEX `nfTitulo_idx` (`titulo` ASC) VISIBLE,
+  INDEX `nfDataVencimento_idx` (`dataVencimento` ASC) VISIBLE,
+  INDEX `nfFase_idx` (`fase` ASC) VISIBLE,
+  INDEX `nfStatus_idx` (`status` ASC) VISIBLE,
+  CONSTRAINT `nfImportacao`
+    FOREIGN KEY (`idImportacao`)
+    REFERENCES `stamariabd`.`importacoes` (`idImportacoes`)
+    ON DELETE CASCADE,
+  CONSTRAINT `nfCliente`
+    FOREIGN KEY (`idCliente`)
+    REFERENCES `stamariabd`.`clientes` (`idCliente`),
+  CONSTRAINT `nfMatrizCliente`
+    FOREIGN KEY (`idMatrizCliente`)
+    REFERENCES `stamariabd`.`matrizCliente` (`idMatrizCliente`))
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8mb3;
+
+
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;

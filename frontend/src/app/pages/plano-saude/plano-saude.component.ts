@@ -1,5 +1,12 @@
 import { Component, signal, ViewChild, ElementRef, inject, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+
+import { NgxEchartsDirective } from 'ngx-echarts';
+import { EChartsOption } from 'echarts';
+import { FlatpickrModule } from 'angularx-flatpickr';
+import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
+import { Portuguese } from 'flatpickr/dist/l10n/pt.js';
+
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { NgSelectModule } from '@ng-select/ng-select';
@@ -33,6 +40,9 @@ export interface HealthPlanCard {
   standalone: true,
   imports: [
     CommonModule,
+    NgxEchartsDirective,
+    FlatpickrModule,
+    SkeletonComponent,
     RouterModule,
     FormsModule,
     NgSelectModule,
@@ -212,7 +222,7 @@ export class PlanoSaudeComponent implements OnInit {
   isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null
     ? localStorage.getItem('sidebarCollapsed') === 'true'
     : true;
-  sidebarTab = signal<'dashboard' | 'atualizacao' | 'configuracoes'>('atualizacao');
+  sidebarTab = signal<'dashboard' | 'atualizacao'>('atualizacao');
   horizontalTab = signal<'plano-saude' | 'seguro-vida'>('plano-saude');
 
   toggleSidebar() {
@@ -220,7 +230,7 @@ export class PlanoSaudeComponent implements OnInit {
     localStorage.setItem('sidebarCollapsed', String(this.isSidebarCollapsed));
   }
 
-  setSidebarTab(tab: 'dashboard' | 'atualizacao' | 'configuracoes') {
+  setSidebarTab(tab: 'dashboard' | 'atualizacao') {
     this.sidebarTab.set(tab);
   }
 
@@ -335,7 +345,191 @@ export class PlanoSaudeComponent implements OnInit {
     this.parsedTitulares.set(mapped);
   }
 
+
+  // Dashboard properties
+  isDashboardLoading = true;
+  locale = Portuguese;
+  
+  dashDataInicio: Date | null = null;
+  dashDataFim: Date | null = null;
+  activePeriodShortcut = 'ultimo-semestre';
+  dashFiltroPessoa: number | null = null;
+  dashFiltroCategoria: string = 'TODOS';
+  
+  chartOptionsEvolucao: any;
+  chartOptionsCategorias: any;
+  
+  topDespesas: any[] = [];
+  
+  listaColaboradoresGeral: any[] = [];
+  
+  carregarColaboradoresParaFiltro() {
+    this.importacoesService.obterDadosDashboard({}).subscribe({
+      next: (res) => {
+        this.listaColaboradoresGeral = res.pessoas || [];
+      }
+    });
+  }
+  
+  isPeriodoValido(): boolean {
+    if (this.dashDataInicio && this.dashDataFim) {
+      if (this.dashDataInicio > this.dashDataFim) return false;
+    }
+    return true;
+  }
+
+  onDataInicioChange() {
+    this.activePeriodShortcut = 'personalizado';
+    if (this.isPeriodoValido()) this.carregarDadosDashboard();
+  }
+
+  onDataFimChange() {
+    this.activePeriodShortcut = 'personalizado';
+    if (this.isPeriodoValido()) this.carregarDadosDashboard();
+  }
+  
+  onShortcutSelectChange(shortcut: string) {
+    if (shortcut === 'personalizado') return;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    if (shortcut === 'ultimo-bimestre') {
+      const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1);
+      const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+      this.dashDataInicio = inicio;
+      this.dashDataFim = fim;
+    } else if (shortcut === 'ultimo-semestre') {
+      const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 6, 1);
+      const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+      this.dashDataInicio = inicio;
+      this.dashDataFim = fim;
+    } else if (shortcut === 'este-ano') {
+      const inicio = new Date(hoje.getFullYear(), 0, 1);
+      this.dashDataInicio = inicio;
+      this.dashDataFim = hoje;
+    } else if (shortcut === 'ano-passado') {
+      const inicio = new Date(hoje.getFullYear() - 1, 0, 1);
+      const fim = new Date(hoje.getFullYear() - 1, 11, 31);
+      this.dashDataInicio = inicio;
+      this.dashDataFim = fim;
+    }
+
+    this.activePeriodShortcut = shortcut;
+    this.carregarDadosDashboard();
+  }
+
+  carregarDadosDashboard() {
+    this.isDashboardLoading = true;
+    
+    const filtros: any = {};
+    if (this.dashDataInicio) {
+      const offset = this.dashDataInicio.getTimezoneOffset();
+      const localDate = new Date(this.dashDataInicio.getTime() - (offset * 60 * 1000));
+      filtros.data_inicio = localDate.toISOString().split('T')[0];
+    }
+    if (this.dashDataFim) {
+      const offset = this.dashDataFim.getTimezoneOffset();
+      const localDate = new Date(this.dashDataFim.getTime() - (offset * 60 * 1000));
+      filtros.data_fim = localDate.toISOString().split('T')[0];
+    }
+    if (this.dashFiltroPessoa) {
+      filtros.id_colaborador = this.dashFiltroPessoa;
+    }
+    
+    if (this.dashFiltroCategoria === 'TODOS') {
+      filtros.tipo_importacao = 'PLANO_SAUDE,SEGURO';
+    } else {
+      filtros.tipo_importacao = this.dashFiltroCategoria;
+    }
+
+    this.importacoesService.obterDadosDashboardAnalitico(filtros).subscribe({
+      next: (dados) => {
+        this.isDashboardLoading = false;
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#ec4899', '#06b6d4', '#8b5cf6', '#f43f5e'];
+
+        this.chartOptionsEvolucao = {
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: (params: any) => {
+              const val = params[0].value;
+              return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+            }
+          },
+          grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+          xAxis: {
+            type: 'category',
+            data: dados.meses.map((m: any) => m.mes),
+            axisTick: { alignWithLabel: true }
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              formatter: (value: number) => {
+                return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
+              }
+            }
+          },
+          series: [
+            {
+              name: 'Gasto Mensal',
+              type: 'bar',
+              barWidth: '45%',
+              data: dados.meses.map((m: any) => m.valor),
+              itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] }
+            }
+          ]
+        };
+
+        this.chartOptionsCategorias = {
+          tooltip: {
+            trigger: 'item',
+            formatter: (params: any) => {
+              const val = params.value;
+              return `${params.name}: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)}`;
+            }
+          },
+          legend: { top: 'bottom' },
+          series: [
+            {
+              name: 'Proporção por Tipo',
+              type: 'pie',
+              radius: ['40%', '70%'],
+              avoidLabelOverlap: false,
+              itemStyle: {
+                borderRadius: 5,
+                borderColor: '#fff',
+                borderWidth: 2
+              },
+              label: { show: false, position: 'center' },
+              emphasis: {
+                label: { show: true, fontSize: 16, fontWeight: 'bold' }
+              },
+              labelLine: { show: false },
+              data: dados.categorias.map((c: any, index: number) => ({
+                value: c.valor,
+                name: c.nome,
+                itemStyle: { color: colors[index % colors.length] }
+              }))
+            }
+          ]
+        };
+
+        this.topDespesas = dados.top_despesas || [];
+      },
+      error: (err) => {
+        console.error('Erro ao carregar dados do dashboard analitico', err);
+        this.isDashboardLoading = false;
+      }
+    });
+  }
+
   ngOnInit() {
+
+    this.carregarColaboradoresParaFiltro();
+    this.onShortcutSelectChange('ultimo-semestre');
+
     this.carregarEmpresasAtualizacao();
     this.carregarEmpresasConfig();
     this.carregarColaboradores();

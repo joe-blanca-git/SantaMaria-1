@@ -21,115 +21,178 @@
             <i class="fa-solid fa-database"></i> <span class="nav-text">Atualização de Dados</span>
           </button>
         </li>
-        <li>
-          <button class="main-nav-link" [class.active]="sidebarTab() === 'configuracoes'"
-            (click)="setSidebarTab('configuracoes')" title="Configurações">
-            <i class="fa-solid fa-gear"></i> <span class="nav-text">Configurações</span>
-          </button>
-        </li>
+        
       </ul>
     </aside>
 
     <main class="main-content">
       <div class="tab-content custom-tab-content">
 
+        
         <!-- DASHBOARD TAB -->
         @if (sidebarTab() === 'dashboard') {
-        <div class="dashboard-section-header">
-          <h3>Dashboard (Em breve)</h3>
-          <p>Acompanhamento e métricas de Planos de Saúde e Seguros de Vida.</p>
+        <div class="dashboard-header border-bottom">
+          <ul class="config-nav" style="margin-bottom: 0;">
+            <li class="config-nav-item">
+              <button class="config-nav-link active">
+                Visão Geral Analítica
+              </button>
+            </li>
+          </ul>
         </div>
-        <app-empty-state icon="fa-solid fa-chart-line" title="Dashboard em construção"
-          description="Os relatórios gerenciais e gráficos serão disponibilizados nesta seção em breve."></app-empty-state>
-        }
+        
+        <div class="dashboard-content p-4">
+          <!-- Painel de Filtros Premium -->
+          <div class="filters-panel-card mb-4">
+            <div class="filters-grid">
+              
+              <!-- Coluna de Período -->
+              <div class="filter-group period-filter-group">
+                <span class="filter-label mb-2 d-block">Período</span>
 
-        <!-- CONFIGURAÇÕES TAB -->
-        @if (sidebarTab() === 'configuracoes') {
-        <div class="config-layout">
-          <aside class="config-sidebar">
-            <h3 class="config-sidebar-title">Menu</h3>
-            <ul class="config-nav">
-              <li class="config-nav-item">
-                <button class="config-nav-link" [class.active]="activeConfigTab() === 'empresas'"
-                  (click)="setActiveConfigTab('empresas')">
-                  <i class="fa-solid fa-building me-2"></i> Empresas
-                </button>
-              </li>
-            </ul>
-          </aside>
+                <div class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2">
+                  <div class="period-inputs">
+                    <div class="input-icon-wrapper" style="width: 130px;">
+                      <i class="fa-regular fa-calendar input-icon"></i>
+                      <input type="text" class="form-control form-control-sm" mwlFlatpickr dateFormat="d/m/Y"
+                        [locale]="locale" [convertModelValue]="true" [maxDate]="dashDataFim || ''"
+                        placeholder="Data inicial" [(ngModel)]="dashDataInicio"
+                        (ngModelChange)="onDataInicioChange()">
+                    </div>
 
-          <div class="config-content">
-            <div *ngIf="activeConfigTab() === 'empresas'" class="config-pane">
-              <div class="config-header">
-                <div>
-                  <h2>Gerenciar Empresas</h2>
-                  <p class="text-muted">Cadastre as empresas e convênios para importação neste módulo.</p>
-                </div>
-                <div class="config-actions">
-                  <button class="btn btn-primary" (click)="openEmpresaModal()">
-                    <i class="fa-solid fa-plus me-2"></i> Cadastrar Empresa
-                  </button>
+                    <span class="period-separator text-muted small px-1">à</span>
+
+                    <div class="input-icon-wrapper" style="width: 130px;">
+                      <i class="fa-regular fa-calendar input-icon"></i>
+                      <input type="text" class="form-control form-control-sm" mwlFlatpickr dateFormat="d/m/Y"
+                        [locale]="locale" [convertModelValue]="true" [minDate]="dashDataInicio || ''"
+                        placeholder="Data final" [(ngModel)]="dashDataFim" (ngModelChange)="onDataFimChange()">
+                    </div>
+                  </div>
+
+                  <select class="form-select form-select-sm shortcut-select" [(ngModel)]="activePeriodShortcut"
+                    (ngModelChange)="onShortcutSelectChange($event)">
+                    <option value="ultimo-bimestre">Últ. Bimestre</option>
+                    <option value="ultimo-semestre">Últ. Semestre</option>
+                    <option value="este-ano">Este Ano</option>
+                    <option value="ano-passado">Ano Passado</option>
+                    <option value="personalizado" disabled>Personalizado</option>
+                  </select>
                 </div>
               </div>
 
-              <div class="config-toolbar">
-                <div class="search-box">
-                  <i class="fa-solid fa-search text-muted"></i>
-                  <input type="text" placeholder="Buscar empresa..." [ngModel]="searchEmpresaConfig"
-                    (ngModelChange)="onSearchEmpresaConfigChange($event)">
+              <!-- Coluna de Categoria (Plano vs Seguro) -->
+              <div class="filter-group">
+                <label class="filter-label mb-2">Categoria</label>
+                <select class="form-select form-select-sm" [(ngModel)]="dashFiltroCategoria"
+                  (ngModelChange)="carregarDadosDashboard()">
+                  <option value="TODOS">Todos (Planos e Seguros)</option>
+                  <option value="PLANO_SAUDE">Planos de Saúde</option>
+                  <option value="SEGURO">Seguros</option>
+                </select>
+              </div>
+
+              <!-- Coluna de Pessoa -->
+              <div class="filter-group">
+                <label class="filter-label mb-2">Funcionário</label>
+                <select class="form-select form-select-sm" [(ngModel)]="dashFiltroPessoa"
+                  (ngModelChange)="carregarDadosDashboard()">
+                  <option [value]="null">Todos</option>
+                  <option *ngFor="let c of listaColaboradoresGeral" [value]="c.idColaborador">{{ c.nome }}
+                  </option>
+                </select>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- SKELETON LOADING STATE -->
+          <div *ngIf="isDashboardLoading">
+            <div class="row g-4 mb-4">
+              <div class="col-12 col-xl-6">
+                <div class="dash-chart-card h-100 p-3 bg-white border rounded-3" style="min-height: 350px;">
+                  <app-skeleton type="text" width="40%" height="18px" class="mb-3"></app-skeleton>
+                  <app-skeleton type="rect" width="100%" height="280px"></app-skeleton>
                 </div>
               </div>
-
-              <div class="table-responsive">
-                <table class="saas-table w-100">
-                  <thead>
-                    <tr>
-                      <th>NOME DA EMPRESA</th>
-                      <th>DESCRIÇÃO</th>
-                      <th class="text-end">AÇÕES</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr *ngFor="let emp of listaEmpresasConfig">
-                      <td class="fw-medium">{{ emp.nome }}</td>
-                      <td class="text-muted text-truncate" style="max-width: 300px;">{{ emp.descricao || '-' }}</td>
-                      <td class="text-end">
-                        <div class="action-buttons">
-                          <button class="btn-icon" title="Editar" (click)="openEmpresaModal(emp)"><i
-                              class="fa-solid fa-pen"></i></button>
-                          <button class="btn-icon delete" title="Excluir"
-                            (click)="confirmarExclusaoEmpresa(emp.idEmpresas!)"><i
-                              class="fa-solid fa-trash"></i></button>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr *ngIf="listaEmpresasConfig.length === 0">
-                      <td colspan="3" class="text-center text-muted py-4">Nenhuma empresa encontrada.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <!-- Pagination -->
-              <div class="pagination-container" *ngIf="listaEmpresasConfig.length > 0">
-                <span class="text-muted small">Total de {{ totalEmpresasConfig }} registros</span>
-                <div class="pagination-actions">
-                  <button class="btn-page" [disabled]="currentEmpresaConfigPage === 1"
-                    (click)="goToEmpresaConfigPage(currentEmpresaConfigPage - 1)">
-                    <i class="fa-solid fa-chevron-left"></i>
-                  </button>
-                  <span class="page-indicator">Página {{ currentEmpresaConfigPage }} de {{ totalEmpresaConfigPages
-                    }}</span>
-                  <button class="btn-page" [disabled]="currentEmpresaConfigPage === totalEmpresaConfigPages"
-                    (click)="goToEmpresaConfigPage(currentEmpresaConfigPage + 1)">
-                    <i class="fa-solid fa-chevron-right"></i>
-                  </button>
+              <div class="col-12 col-xl-6">
+                <div class="dash-chart-card h-100 p-3 bg-white border rounded-3" style="min-height: 350px;">
+                  <app-skeleton type="text" width="40%" height="18px" class="mb-3"></app-skeleton>
+                  <div class="d-flex justify-content-center align-items-center h-100 pb-4">
+                    <app-skeleton type="circle" width="220px" height="220px"></app-skeleton>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- CHARTS E GRIDS -->
+          <div *ngIf="!isDashboardLoading">
+            <div class="row g-4 mb-4">
+              <!-- Gráfico de Colunas 12 Meses -->
+              <div class="col-12 col-xl-8">
+                <div class="dash-chart-card h-100 p-3 bg-white border rounded-3 shadow-sm">
+                  <h6 class="mb-3 fw-semibold text-secondary">Evolução Mensal</h6>
+                  <div echarts *ngIf="chartOptionsEvolucao" [options]="chartOptionsEvolucao" class="chart-container" style="min-height: 280px;"></div>
+                </div>
+              </div>
+
+              <!-- Gráfico de Donut Categorias -->
+              <div class="col-12 col-xl-4">
+                <div class="dash-chart-card h-100 p-3 bg-white border rounded-3 shadow-sm">
+                  <h6 class="mb-3 fw-semibold text-secondary">Proporção por Tipo</h6>
+                  <div echarts *ngIf="chartOptionsCategorias" [options]="chartOptionsCategorias" class="chart-container" style="min-height: 280px;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tabela Maiores Gastos (SaaS Style) -->
+            <div class="row g-4 mb-4">
+              <div class="col-12">
+                <div class="dash-chart-card h-100 p-3 bg-white border rounded-3 shadow-sm">
+                  <h6 class="mb-3 fw-semibold text-secondary">Top 10 Colaboradores com Maiores Gastos</h6>
+                  <div class="table-responsive">
+                    <table class="saas-table">
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Colaborador</th>
+                          <th>Categoria</th>
+                          <th class="text-end">Valor (R$)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngFor="let row of topDespesas">
+                          <td class="text-muted small">{{ row.data }}</td>
+                          <td class="fw-medium text-dark">{{ row.pessoa }}</td>
+                          <td>
+                            <span class="badge" [ngClass]="row.descricao.includes('Seguro') ? 'bg-primary' : 'bg-success'">
+                              {{ row.descricao }}
+                            </span>
+                          </td>
+                          <td class="text-end fw-semibold tabular-nums">
+                            {{ row.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                          </td>
+                        </tr>
+                        <tr *ngIf="topDespesas.length === 0">
+                          <td colspan="4" class="text-center py-4 text-muted">
+                            Nenhum gasto encontrado para este período.
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+          </div>
         </div>
         }
+
+
+        <!-- CONFIGURAÇÕES TAB -->
+        
 
         <!-- ATUALIZAÇÃO DE DADOS TAB -->
         @if (sidebarTab() === 'atualizacao') {
@@ -216,6 +279,7 @@
                         <th>Empresa</th>
                         <th>Tipo</th>
                         <th>Data</th>
+                        <th>Usuário</th>
                         <th class="text-end">Valor Total</th>
                         <th class="text-center">Ações</th>
                       </tr>
@@ -240,6 +304,11 @@
                           <span class="company-badge">{{ hist.tipo }}</span>
                         </td>
                         <td>{{ hist.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                        <td>
+                          <span class="text-muted small fw-medium">
+                            <i class="fa-regular fa-user me-1"></i>{{ hist.autor || '-' }}
+                          </span>
+                        </td>
                         <td class="text-end amount-cell">{{ hist.valor_total | currency:'BRL' }}</td>
                         <td>
                           <div class="actions-cell justify-content-center">
@@ -252,7 +321,7 @@
                       </tr>
                       }
                       <tr *ngIf="listaImportacoes.length === 0">
-                        <td colspan="6" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
+                        <td colspan="7" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
                       </tr>
                     </tbody>
                   </table>

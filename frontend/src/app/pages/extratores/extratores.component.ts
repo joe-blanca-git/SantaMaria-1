@@ -8,6 +8,7 @@ import { ButtonComponent } from '../../shared/components/button/button.component
 import { ModalComponent } from '../../shared/components/modal/modal.component';
 import { LoadingComponent } from '../../shared/components/loading/loading.component';
 import { ImportacoesService, Importacao } from '../../core/services/importacoes.service';
+import { IAuthService } from '../../core/interfaces/auth.service';
 
 export interface ExtractorCard {
   id: string;
@@ -37,6 +38,7 @@ export interface ExtractorCard {
   styleUrl: './extratores.component.scss'
 })
 export class ExtratoresComponent implements OnInit {
+  authService = inject(IAuthService);
   private importacoesService = inject(ImportacoesService);
 
   // Estado de upload Unificado para Composições
@@ -485,7 +487,7 @@ export class ExtratoresComponent implements OnInit {
   }
 
   private _processDrogaRaiaProrrogacao(empresa: File, acr: File) {
-    this.importacoesService.conciliarProrrogacaoDrogaRaia(empresa, acr).subscribe({
+    this.importacoesService.conciliarProrrogacaoDrogaRaia(empresa, acr, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
@@ -502,7 +504,7 @@ export class ExtratoresComponent implements OnInit {
   }
 
   private _processMateusProrrogacao(empresa: File, acr: File) {
-    this.importacoesService.conciliarProrrogacaoMateus(empresa, acr).subscribe({
+    this.importacoesService.conciliarProrrogacaoMateus(empresa, acr, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
@@ -519,7 +521,7 @@ export class ExtratoresComponent implements OnInit {
   }
 
   private _processCemaProrrogacao(empresa: File, acr: File) {
-    this.importacoesService.conciliarProrrogacaoCema(empresa, acr).subscribe({
+    this.importacoesService.conciliarProrrogacaoCema(empresa, acr, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
@@ -549,7 +551,7 @@ export class ExtratoresComponent implements OnInit {
   private _processAtacadaoProrrogacao() {
     const html = this.prorrogacaoHtmlFile()!;
     const csv = this.prorrogacaoExcelFile()!;
-    this.importacoesService.conciliarProrrogacaoAtacadao(html, csv).subscribe({
+    this.importacoesService.conciliarProrrogacaoAtacadao(html, csv, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
@@ -568,7 +570,7 @@ export class ExtratoresComponent implements OnInit {
   private _processSendasProrrogacao() {
     const sendas = this.sendasProrrogacaoFile()!;
     const acr = this.acrProrrogacaoFile()!;
-    this.importacoesService.conciliarProrrogacaoSendas(sendas, acr).subscribe({
+    this.importacoesService.conciliarProrrogacaoSendas(sendas, acr, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
@@ -587,7 +589,7 @@ export class ExtratoresComponent implements OnInit {
   private _processMartminasProrrogacao() {
     const martminas = this.martminasProrrogacaoFile()!;
     const acr = this.acrMartminasProrrogacaoFile()!;
-    this.importacoesService.conciliarProrrogacaoMartminas(martminas, acr).subscribe({
+    this.importacoesService.conciliarProrrogacaoMartminas(martminas, acr, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
@@ -606,7 +608,7 @@ export class ExtratoresComponent implements OnInit {
   private _processSavegnagoProrrogacao() {
     const savegnago = this.savegnagoProrrogacaoFile()!;
     const acr = this.acrSavegnagoProrrogacaoFile()!;
-    this.importacoesService.conciliarProrrogacaoSavegnago(savegnago, acr).subscribe({
+    this.importacoesService.conciliarProrrogacaoSavegnago(savegnago, acr, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
@@ -676,31 +678,31 @@ export class ExtratoresComponent implements OnInit {
     
     switch (extId) {
       case 'ext-pdf-ia':
-        requestObservable = this.importacoesService.extrairAtacadao(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairAtacadao(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-ofx-pdf':
-        requestObservable = this.importacoesService.extrairSendas(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairSendas(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-martminas-composicao':
-        requestObservable = this.importacoesService.extrairMartMinas(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairMartMinas(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-savegnago-composicao':
-        requestObservable = this.importacoesService.extrairSavegnago(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairSavegnago(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-cema-composicao':
-        requestObservable = this.importacoesService.extrairCema(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairCema(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-mateus-composicao':
-        requestObservable = this.importacoesService.extrairMateus(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairMateus(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-drogaraia-composicao':
-        requestObservable = this.importacoesService.extrairDrogaRaia(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairDrogaRaia(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-amazon-composicao':
-        requestObservable = this.importacoesService.extrairAmazon(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairAmazon(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       case 'ext-gpa-composicao':
-        requestObservable = this.importacoesService.extrairGPA(empresaFile, acrFile);
+        requestObservable = this.importacoesService.extrairGPA(empresaFile, acrFile, this.authService.currentUser()?.iduser);
         break;
       default:
         this.composicaoUnifiedError.set('Funcionalidade ainda não implementada.');

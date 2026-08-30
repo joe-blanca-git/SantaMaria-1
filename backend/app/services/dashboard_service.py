@@ -43,7 +43,8 @@ class DashboardService:
         # Filtros utilitários
         def apply_filters(q):
             if tipo_importacao:
-                q = q.join(Importacao, Movimentacao.idImportacoes == Importacao.idImportacoes).filter(Importacao.tipo == tipo_importacao)
+                tipos = [t.strip() for t in tipo_importacao.split(",")]
+                q = q.join(Importacao, Movimentacao.idImportacoes == Importacao.idImportacoes).filter(Importacao.tipo.in_(tipos))
             q = q.filter(Movimentacao.createdAt >= dt_inicio)
             q = q.filter(Movimentacao.createdAt < dt_fim_inclusive)
             if id_empresa:
@@ -380,7 +381,8 @@ class DashboardService:
         # Filtros utilitários
         def apply_filters(q):
             if tipo_importacao:
-                q = q.join(Importacao, Movimentacao.idImportacoes == Importacao.idImportacoes).filter(Importacao.tipo == tipo_importacao)
+                tipos = [t.strip() for t in tipo_importacao.split(",")]
+                q = q.join(Importacao, Movimentacao.idImportacoes == Importacao.idImportacoes).filter(Importacao.tipo.in_(tipos))
             q = q.filter(Movimentacao.createdAt >= dt_inicio)
             q = q.filter(Movimentacao.createdAt < dt_fim_inclusive)
             if id_empresa:

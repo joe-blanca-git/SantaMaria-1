@@ -4,6 +4,7 @@ import { User } from '../../core/models/user.model';
 import { of } from 'rxjs';
 import { Component, inject, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { NgSelectModule } from '@ng-select/ng-select';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 
@@ -25,6 +26,7 @@ import { EmpresasService, Empresa } from '../../core/services/empresas.service';
   selector: 'app-configuracoes-cadastros',
   standalone: true,
   imports: [
+    NgSelectModule,
     CommonModule, ReactiveFormsModule, FormsModule,
     EmptyStateComponent, ButtonComponent, InputComponent,
     ModalComponent, ConfirmModalComponent, DropdownComponent,
@@ -34,6 +36,14 @@ import { EmpresasService, Empresa } from '../../core/services/empresas.service';
   styleUrl: './configuracoes-cadastros.component.scss'
 })
 export class ConfiguracoesCadastrosComponent implements OnInit {
+  modulosOptions = [
+    { id: 1, nome: 'Despesas de Viagens' },
+    { id: 2, nome: 'Plano de Saúde' },
+    { id: 3, nome: 'Extratores' },
+    { id: 4, nome: 'Inadimplência' },
+    { id: 5, nome: 'Conciliação de Pagamentos' }
+  ];
+
   private authService = inject(IAuthService);
   isAdmin = computed(() => this.authService.currentUser()?.role === 'admin');
 
@@ -785,7 +795,7 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
       this.novaEmpresa = { ...empresa };
     } else {
       this.empresaModalMode = 'create';
-      this.novaEmpresa = { nome: '', descricao: '' };
+      this.novaEmpresa = { nome: '', descricao: '', modulo_ids: [] };
     }
     this.isEmpresaModalOpen = true;
   }

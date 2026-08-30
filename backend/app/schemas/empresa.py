@@ -9,12 +9,14 @@ class EmpresaBase(BaseModel):
 class EmpresaCreate(EmpresaBase):
     nome: str = Field(..., max_length=80)
     modulo_id: Optional[int] = None
+    modulo_ids: Optional[List[int]] = None
 
 class EmpresaUpdate(EmpresaBase):
-    pass
+    modulo_ids: Optional[List[int]] = None
 
 class EmpresaResponse(EmpresaBase):
     idEmpresas: int
+    modulo_ids: Optional[List[int]] = None
     nome: str
     createdAt: Optional[datetime] = None
     updatedAte: Optional[datetime] = None

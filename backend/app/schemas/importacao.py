@@ -18,6 +18,7 @@ class ImportacaoResponse(ImportacaoBase):
     updatedAte: Optional[datetime] = None
     empresa: Optional[EmpresaResponse] = None
     valor_total: float = 0.0
+    autor: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -24,12 +24,13 @@ class ImportacaoService:
     def excluir_importacao(self, id_importacao: int) -> bool:
         return self.repository.delete(id_importacao)
 
-    def registrar_importacao(self, nome_arquivo: str, extensao: str, tipo: str, id_empresa: int = None) -> Importacao:
+    def registrar_importacao(self, nome_arquivo: str, extensao: str, tipo: str, id_empresa: int = None, id_user_inc: int = None) -> Importacao:
         nova_importacao = Importacao(
             nomeArquivo=nome_arquivo,
             extensaoArquivo=extensao,
+            idEmpresa=id_empresa,
             tipo=tipo,
-            idEmpresa=id_empresa
+            idUserInc=id_user_inc
         )
         self.db.add(nova_importacao)
         self.db.commit()

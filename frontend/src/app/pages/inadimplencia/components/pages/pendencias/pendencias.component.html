@@ -4,7 +4,7 @@
 
             <!-- Coluna de Período -->
             <div class="filter-group period-filter-group">
-                <span class="filter-label mb-2 d-block">Período</span>
+                <span class="filter-label mb-2 d-block">Data Vencimento</span>
 
                 <div class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2">
                     <div class="period-inputs">
@@ -28,6 +28,11 @@
 
                     <select class="form-select form-select-sm shortcut-select" [(ngModel)]="activePeriodShortcut"
                         (ngModelChange)="onShortcutSelectChange($event)">
+                        <option value="vencidas">Vencidas (padrão)</option>
+                        <option value="regra-dia" [disabled]="!regraDiaAplicavel"
+                            [title]="regraDiaAplicavel ? 'Vencimento de ' + (regraDiaInicio | date:'dd/MM') + ' até ' + (regraDiaFim | date:'dd/MM') : 'Sem regra definida para ' + regraDiaDiaSemana">
+                            Regra do Dia{{ regraDiaAplicavel ? '' : ' (indisponível hoje)' }}
+                        </option>
                         <option value="ultimo-bimestre">Últ. Bimestre</option>
                         <option value="ultimo-semestre">Últ. Semestre</option>
                         <option value="este-ano">Este Ano</option>
@@ -69,6 +74,12 @@
         </div>
     </div>
 
+    @if (isLoading) {
+    <div class="text-center text-muted py-4">
+        <i class="fa-solid fa-spinner fa-spin me-2"></i> Carregando pendências...
+    </div>
+    }
+
     <div class="kanban">
         <div class="row flex-nowrap overflow-auto h-100 m-0 custom-scrollbar pb-2">
             @for (column of filteredColumns; track column.id) {
@@ -95,8 +106,9 @@
                         <div class="kanban-card mb-2 p-3"
                              draggable="true"
                              (dragstart)="onDragStart($event, card, column)"
-                             (dragend)="onDragEnd($event)">
-                            
+                             (dragend)="onDragEnd($event)"
+                             (click)="abrirDetalhes(card)">
+
                             <!-- Card Header (Title & Options) -->
                             <div class="d-flex align-items-start justify-content-between mb-2">
                                 <h6 class="card-title text-truncate mb-0" [title]="card.title">{{ card.title }}</h6>
@@ -119,7 +131,11 @@
                             <div class="card-footer d-flex align-items-center mt-auto pt-2 border-top border-secondary-subtle">
                                 <div class="card-lead-time d-flex align-items-center gap-1 text-muted">
                                     <i class="fa-regular fa-clock"></i>
-                                    <span>{{ card.leadTimeDays }} {{ card.leadTimeDays === 1 ? 'dia' : 'dias' }} sem solução</span>
+                                    @if (card.leadTimeDays !== null) {
+                                    <span>{{ card.leadTimeDays }} {{ card.leadTimeDays === 1 ? 'dia' : 'dias' }} desde a importação</span>
+                                    } @else {
+                                    <span>Data de importação indisponível</span>
+                                    }
                                 </div>
                             </div>
                         </div>
@@ -132,3 +148,10 @@
         </div>
     </div>
 </div>
+
+<app-pendencia-detalhe-modal
+    [isOpen]="isDetalheModalOpen"
+    [card]="cardSelecionado"
+    (closed)="fecharDetalhes()"
+    (atualizado)="carregarPendencias()">
+</app-pendencia-detalhe-modal>

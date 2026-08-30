@@ -1244,6 +1244,7 @@
                       <th>Empresa</th>
                       <th>Tipo</th>
                       <th>Data</th>
+                      <th>Usuário</th>
                       <th class="text-end">Valor Total</th>
                       <th class="text-center">Ações</th>
                     </tr>
@@ -1268,6 +1269,11 @@
                         <span class="company-badge">{{ hist.tipo }}</span>
                       </td>
                       <td>{{ hist.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                      <td>
+                        <span class="text-muted small fw-medium">
+                          <i class="fa-regular fa-user me-1"></i>{{ hist.autor || '-' }}
+                        </span>
+                      </td>
                       <td class="text-end amount-cell">{{ hist.valor_total | currency:'BRL' }}</td>
                       <td>
                         <div class="actions-cell justify-content-center">
@@ -1280,7 +1286,7 @@
                     </tr>
                     }
                     <tr *ngIf="listaImportacoes.length === 0">
-                      <td colspan="6" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
+                      <td colspan="7" class="text-center text-muted py-4">Nenhuma importação encontrada.</td>
                     </tr>
                   </tbody>
                 </table>

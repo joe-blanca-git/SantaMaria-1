@@ -13,10 +13,16 @@ class Importacao(Base):
     createdAt = Column(DateTime, default=func.now())
     updatedAte = Column(DateTime, nullable=True, onupdate=func.now())
     tipo = Column(String(45), nullable=False)
+    idUserInc = Column(Integer, ForeignKey("users.iduser"), nullable=True)
     
     movimentacoes = relationship("Movimentacao", back_populates="importacao", cascade="all, delete-orphan")
     empresa = relationship("Empresa")
+    usuario = relationship("User")
 
     @property
     def valor_total(self) -> float:
         return sum(m.valor for m in self.movimentacoes)
+
+    @property
+    def autor(self) -> str:
+        return self.usuario.name if self.usuario else None

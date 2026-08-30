@@ -11,6 +11,7 @@ export interface Empresa {
   updatedAte?: string;
   icon?: string; // Propriedade extra para o front-end
   modulo_id?: number;
+  modulo_ids?: number[];
 }
 
 export interface PaginatedResponse<T> {

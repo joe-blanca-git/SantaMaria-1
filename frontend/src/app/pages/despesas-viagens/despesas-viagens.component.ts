@@ -21,6 +21,7 @@ import { CentrosCustoService, CentroCusto } from '../../core/services/centros-cu
 import { UnidadesService, Unidade } from '../../core/services/unidades.service';
 import { ImportacoesService, Importacao, DespesaExtraida } from '../../core/services/importacoes.service';
 import { EmpresasService, Empresa } from '../../core/services/empresas.service';
+import { IAuthService } from '../../core/interfaces/auth.service';
 import { ViewChild, ElementRef, HostListener } from '@angular/core';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -140,7 +141,8 @@ export class DespesasViagensComponent implements OnInit {
     private centrosCustoService: CentrosCustoService,
     private unidadesService: UnidadesService,
     private importacoesService: ImportacoesService,
-    private empresasService: EmpresasService
+    private empresasService: EmpresasService,
+    private authService: IAuthService
   ) {
     effect(() => {
       // Registrar dependência reativa do Signal do tema
@@ -608,7 +610,9 @@ export class DespesasViagensComponent implements OnInit {
     if (this.despesasExtraidas.length === 0) return;
 
     this.isSalvandoExtraidos = true;
-    this.importacoesService.salvarExtraidos(this.selectedFileName, this.despesasExtraidas).subscribe({
+    const idUserLogado = this.authService.currentUser()?.iduser;
+    
+    this.importacoesService.salvarExtraidos(this.selectedFileName, this.despesasExtraidas, idUserLogado).subscribe({
       next: (res) => {
         this.isSalvandoExtraidos = false;
         this.closeImportModal();
