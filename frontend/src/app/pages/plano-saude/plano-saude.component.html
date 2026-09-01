@@ -150,30 +150,28 @@
             <div class="row g-4 mb-4">
               <div class="col-12">
                 <div class="dash-chart-card h-100 p-3 bg-white border rounded-3 shadow-sm">
-                  <h6 class="mb-3 fw-semibold text-secondary">Top 10 Colaboradores com Maiores Gastos</h6>
+                  <h6 class="mb-3 fw-semibold text-secondary">Total por Empresa</h6>
                   <div class="table-responsive">
                     <table class="saas-table">
-                      <thead>
-                        <tr>
-                          <th>Data</th>
-                          <th>Colaborador</th>
-                          <th>Categoria</th>
-                          <th class="text-end">Valor (R$)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr *ngFor="let row of topDespesas">
-                          <td class="text-muted small">{{ row.data }}</td>
-                          <td class="fw-medium text-dark">{{ row.pessoa }}</td>
-                          <td>
-                            <span class="badge" [ngClass]="row.descricao.includes('Seguro') ? 'bg-primary' : 'bg-success'">
-                              {{ row.descricao }}
-                            </span>
-                          </td>
-                          <td class="text-end fw-semibold tabular-nums">
-                            {{ row.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
-                          </td>
-                        </tr>
+                        <thead>
+                          <tr>
+                            <th style="width: 80px;">Posição</th>
+                            <th>Empresa</th>
+                            <th class="text-end">Valor (R$)</th>
+                            <th class="text-end">Part. (%)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr *ngFor="let row of topDespesas">
+                            <td class="text-muted small fw-medium">#{{ row.posicao }}</td>
+                            <td class="fw-medium text-dark">{{ row.nome }}</td>
+                            <td class="text-end fw-semibold tabular-nums text-danger">
+                              {{ row.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                            </td>
+                            <td class="text-end text-muted small tabular-nums">
+                              {{ row.pct | number:'1.1-1':'pt-BR' }}%
+                            </td>
+                          </tr>
                         <tr *ngIf="topDespesas.length === 0">
                           <td colspan="4" class="text-center py-4 text-muted">
                             Nenhum gasto encontrado para este período.
@@ -516,17 +514,52 @@
                   } @else {
                   <div class="d-flex justify-content-end gap-1">
                     @if (titular.centro_custo === 'N/D') {
-                    <button class="btn btn-sm-action btn-outline-primary hover-lift"
+                    <button class="btn btn-sm-action btn-outline-primary hover-lift" [disabled]="isAddingBeneficiario()"
                       (click)="openCreateColaboradorModal(titular._id, titular)" title="Cadastrar Colaborador">
                       <i class="fa-solid fa-user-plus"></i>
                     </button>
                     }
-                    <button class="btn btn-sm-action btn-link hover-lift" (click)="startEdit(titular._id, titular)"
-                      title="Editar">
+                    <button class="btn btn-sm-action btn-link hover-lift" [disabled]="isAddingBeneficiario()"
+                      (click)="startEdit(titular._id, titular)" title="Editar">
                       <i class="fa-solid fa-pen-to-square"></i>
                     </button>
                   </div>
                   }
+                </td>
+              </tr>
+              }
+              <!-- ADICIONAR BENEFICIÁRIO MANUALMENTE -->
+              @if (isAddingBeneficiario()) {
+              <tr class="table-active">
+                <td>
+                  <ng-select [items]="colaboradoresList()" bindLabel="nome" bindValue="nome"
+                     [ngModel]="newBeneficiarioNome()" (ngModelChange)="newBeneficiarioNome.set($event)"
+                     [clearable]="false" placeholder="Selecione o colaborador..." class="custom-ng-select w-100">
+                  </ng-select>
+                </td>
+                <td class="text-end">
+                  <input type="number" class="form-control form-control-sm text-end" [value]="newBeneficiarioValor()"
+                     (input)="onNewBeneficiarioValorChange($event)" placeholder="0,00">
+                </td>
+                <td class="text-end">
+                  <div class="d-flex justify-content-end gap-1">
+                    <button class="btn btn-sm-action btn-success" (click)="confirmAddBeneficiario()"
+                      [disabled]="!newBeneficiarioNome()" title="Adicionar">
+                      <i class="fa-solid fa-check"></i>
+                    </button>
+                    <button class="btn btn-sm-action btn-secondary" (click)="cancelAddBeneficiario()" title="Cancelar">
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              } @else {
+              <tr>
+                <td colspan="3" class="text-center py-2">
+                  <button class="btn btn-sm btn-outline-primary" (click)="startAddBeneficiario()"
+                    [disabled]="editingRowId() !== null">
+                    <i class="fa-solid fa-plus me-1"></i>Adicionar Beneficiário
+                  </button>
                 </td>
               </tr>
               }
@@ -601,7 +634,7 @@
           Cancelar
         </app-button>
         <app-button variant="primary" (clicked)="confirmAndSave()" [loading]="isSaving()"
-          [disabled]="isSaving() || editingRowId() !== null">
+          [disabled]="isSaving() || editingRowId() !== null || isAddingBeneficiario()">
           Confirmar
         </app-button>
       </div>

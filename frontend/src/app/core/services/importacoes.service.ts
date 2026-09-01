@@ -487,9 +487,11 @@ export class ImportacoesService {
     return this.http.post(`${this.apiUrl}/gpa/extrair`, formData, { responseType: 'blob' });
   }
 
-  conciliarProrrogacaoAtacadao(htmlFile: File, csvFile: File, idUserInc?: number): Observable<Blob> {
+  conciliarProrrogacaoAtacadao(htmlFiles: File[], csvFile: File, idUserInc?: number): Observable<Blob> {
     const formData = new FormData();
-    formData.append('html_file', htmlFile);
+    for (const file of htmlFiles) {
+        formData.append('html_files', file);
+      }
     formData.append('csv_file', csvFile);
     if (idUserInc) {
       formData.append('idUserInc', idUserInc.toString());
@@ -715,6 +717,12 @@ export class ImportacoesService {
     const formData = new FormData();
     formData.append('file', file);
     return this.http.post<any>(`${this.apiUrl}/conciliacao-pagamentos/ler-apb`, formData);
+  }
+
+  analisarUniversal(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<any>(`${this.apiUrl}/plano-saude/universal/analisar`, formData);
   }
 
   analisarSorriso(file: File): Observable<any> {

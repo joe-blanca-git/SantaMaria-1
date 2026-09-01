@@ -301,7 +301,7 @@ export class ExtratoresComponent implements OnInit {
       name: 'Droga Raia',
       description: 'Importação de dados de prorrogação',
       icon: 'fa-solid fa-clock-rotate-left',
-      logo: 'https://logodownload.org/wp-content/uploads/2017/09/droga-raia-logo.png',
+      logo: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRJyK8qtV1gCvyfin2YuX-W9c4lKeI5OgqijKcqdcaNQA&s=10',
       colorClass: 'text-danger bg-danger-subtle',
       status: 'active',
       statusText: 'Ativo',
@@ -323,7 +323,7 @@ export class ExtratoresComponent implements OnInit {
       name: 'GPA',
       description: 'Importação de dados de prorrogação',
       icon: 'fa-solid fa-clock-rotate-left',
-      logo: 'https://upload.wikimedia.org/wikipedia/pt/b/b3/Grupo_P%C3%A3o_de_A%C3%A7%C3%BAcar_%28logo%29.png',
+      logo: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQDWJcB0nVZmbH3hxE0N672dnh0ehHozhAT4TzbRN0vqg&s=10',
       colorClass: 'text-success bg-success-subtle',
       status: 'active',
       statusText: 'Ativo',
@@ -335,7 +335,7 @@ export class ExtratoresComponent implements OnInit {
   @ViewChild('prorrogacaoExcelInput') prorrogacaoExcelInput!: ElementRef<HTMLInputElement>;
 
   // Estado de upload da Prorrogação (Atacadão)
-  prorrogacaoHtmlFile = signal<File | null>(null);
+  prorrogacaoHtmlFiles = signal<File[]>([]);
   prorrogacaoExcelFile = signal<File | null>(null);
   isProrrogacaoModalOpen = signal<boolean>(false);
   isProrrogacaoProcessing = signal<boolean>(false);
@@ -376,7 +376,7 @@ export class ExtratoresComponent implements OnInit {
   // =========================================================
   isProrrogacaoUnifiedModalOpen = false;
   prorrogacaoExtSelecionado: ExtractorCard | null = null;
-  prorrogacaoEmpresaFile = signal<File | null>(null);
+  prorrogacaoEmpresaFiles = signal<File[]>([]);
   prorrogacaoAcrFile = signal<File | null>(null);
   isProrrogacaoUnifiedProcessing = signal<boolean>(false);
   prorrogacaoUnifiedError = signal<string>('');
@@ -386,7 +386,7 @@ export class ExtratoresComponent implements OnInit {
 
   openProrrogacaoModal(ext: ExtractorCard) {
     this.prorrogacaoExtSelecionado = ext;
-    this.prorrogacaoEmpresaFile.set(null);
+    this.prorrogacaoEmpresaFiles.set([]);
     this.prorrogacaoAcrFile.set(null);
     this.isProrrogacaoUnifiedProcessing.set(false);
     this.prorrogacaoUnifiedError.set('');
@@ -415,7 +415,7 @@ export class ExtratoresComponent implements OnInit {
   onProrrogacaoEmpresaFileChange(event: Event) {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
-      this.prorrogacaoEmpresaFile.set(input.files[0]);
+      this.prorrogacaoEmpresaFiles.set(Array.from(input.files));
     }
   }
 
@@ -434,9 +434,9 @@ export class ExtratoresComponent implements OnInit {
   }
 
   processProrrogacaoUnified() {
-    const empresaFile = this.prorrogacaoEmpresaFile();
+    const empresaFiles = this.prorrogacaoEmpresaFiles();
     const acrFile = this.prorrogacaoAcrFile();
-    if (!empresaFile || !acrFile) {
+    if (empresaFiles.length === 0 || !acrFile) {
       this.prorrogacaoUnifiedError.set('Por favor, selecione ambos os arquivos antes de processar.');
       return;
     }
@@ -445,10 +445,11 @@ export class ExtratoresComponent implements OnInit {
     this.prorrogacaoUnifiedError.set('');
 
     const extId = this.prorrogacaoExtSelecionado?.id;
+    const empresaFile = empresaFiles[0];
 
     // Redirecionar para o método correto de acordo com a empresa
     if (extId === 'ext-atacadao-prorrogacao') {
-      this.prorrogacaoHtmlFile.set(empresaFile);
+      this.prorrogacaoHtmlFiles.set(empresaFiles);
       this.prorrogacaoExcelFile.set(acrFile);
       this._processAtacadaoProrrogacao();
     } else if (extId === 'ext-sendas-prorrogacao') {
@@ -549,14 +550,14 @@ export class ExtratoresComponent implements OnInit {
   }
 
   private _processAtacadaoProrrogacao() {
-    const html = this.prorrogacaoHtmlFile()!;
+    const htmls = this.prorrogacaoHtmlFiles();
     const csv = this.prorrogacaoExcelFile()!;
-    this.importacoesService.conciliarProrrogacaoAtacadao(html, csv, this.authService.currentUser()?.iduser).subscribe({
+    this.importacoesService.conciliarProrrogacaoAtacadao(htmls, csv, this.authService.currentUser()?.iduser).subscribe({
       next: (blob) => {
         this.carregarHistorico();
         this.isProrrogacaoUnifiedProcessing.set(false);
         this.isProrrogacaoUnifiedModalOpen = false;
-        const originalName = html.name.substring(0, html.name.lastIndexOf('.')) || 'Conciliado';
+        const originalName = htmls[0].name.substring(0, htmls[0].name.lastIndexOf('.')) || 'Conciliado';
         this._downloadBlob(blob, `${originalName}_conciliado.xlsx`);
       },
       error: (err) => {

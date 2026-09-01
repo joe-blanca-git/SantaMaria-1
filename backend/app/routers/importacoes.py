@@ -610,7 +610,7 @@ async def conciliar_composicao_ws(wb, acr_file, rows_to_export, font_header, fon
     ws2.column_dimensions['G'].width = 18
 
 @router.post("/atacadao/extrair")
-async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db), idUserInc: Optional[int] = Form(None)):
+async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Arquivo inválido")
         
@@ -795,7 +795,7 @@ async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = 
         filename = file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Atacadão", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Atacadão", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -811,7 +811,7 @@ async def extrair_atacadao(file: UploadFile = File(...), acr_file: UploadFile = 
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sendas/extrair")
-async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db), idUserInc: Optional[int] = Form(None)):
+async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Arquivo inválido")
         
@@ -1040,7 +1040,7 @@ async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = Fi
         filename = file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Sendas", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Composição - Sendas", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -1057,50 +1057,51 @@ async def extrair_sendas(file: UploadFile = File(...), acr_file: UploadFile = Fi
 
 @router.post("/atacadao/conciliar")
 async def conciliar_atacadao(
-    html_file: UploadFile = File(...),
+    html_files: List[UploadFile] = File(...),
     csv_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
-    if not html_file.filename or not csv_file.filename:
+    if not html_files or not csv_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
         
     try:
-        # 1. Parse HTML file
-        html_bytes = await html_file.read()
-        html_content = html_bytes.decode('utf-8', errors='ignore')
-        
-        parser = AtacadaoHTMLParser()
-        parser.feed(html_content)
-        
+        # 1. Parse HTML files
         invoices_html = []
-        for table in parser.tables:
-            if not table:
-                continue
-            headers = [h.strip() for h in table[0]]
-            if 'N Fiscal' not in headers or 'Prorrog.' not in headers:
-                continue
+        for h_file in html_files:
+            html_bytes = await h_file.read()
+            html_content = html_bytes.decode('utf-8', errors='ignore')
             
-            n_fiscal_idx = headers.index('N Fiscal')
-            prorrog_idx = headers.index('Prorrog.')
+            parser = AtacadaoHTMLParser()
+            parser.feed(html_content)
             
-            for row in table[1:]:
-                if len(row) <= max(n_fiscal_idx, prorrog_idx):
+            for table in parser.tables:
+                if not table:
                     continue
-                n_fiscal_raw = row[n_fiscal_idx].strip()
-                prorrog_raw = row[prorrog_idx].strip()
+                headers = [h.strip() for h in table[0]]
+                if 'N Fiscal' not in headers or 'Prorrog.' not in headers:
+                    continue
                 
-                if not n_fiscal_raw or n_fiscal_raw.lower() == 'total' or 'total' in n_fiscal_raw.lower():
-                    continue
+                n_fiscal_idx = headers.index('N Fiscal')
+                prorrog_idx = headers.index('Prorrog.')
+                
+                for row in table[1:]:
+                    if len(row) <= max(n_fiscal_idx, prorrog_idx):
+                        continue
+                    n_fiscal_raw = row[n_fiscal_idx].strip()
+                    prorrog_raw = row[prorrog_idx].strip()
                     
-                # Trim leading 2 zeros (000017059 -> 0017059)
-                n_fiscal_formatted = n_fiscal_raw[2:] if n_fiscal_raw.startswith('0000') else n_fiscal_raw
-                
-                invoices_html.append({
-                    'raw_nf': n_fiscal_raw,
-                    'nf': n_fiscal_formatted,
-                    'prorrogacao': prorrog_raw
-                })
+                    if not n_fiscal_raw or n_fiscal_raw.lower() == 'total' or 'total' in n_fiscal_raw.lower():
+                        continue
+                        
+                    # Trim leading 2 zeros (000017059 -> 0017059)
+                    n_fiscal_formatted = n_fiscal_raw[2:] if n_fiscal_raw.startswith('0000') else n_fiscal_raw
+                    
+                    invoices_html.append({
+                        'raw_nf': n_fiscal_raw,
+                        'nf': n_fiscal_formatted,
+                        'prorrogacao': prorrog_raw
+                    })
                 
         if not invoices_html:
             raise HTTPException(
@@ -1310,10 +1311,10 @@ async def conciliar_atacadao(
         wb.save(output)
         output.seek(0)
         
-        filename = html_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
+        filename = html_files[0].filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Atacadão", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Atacadão", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -1333,7 +1334,7 @@ async def conciliar_sendas(
     sendas_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
     if not sendas_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1591,7 +1592,7 @@ async def conciliar_sendas(
         filename = sendas_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Sendas", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Sendas", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -1611,7 +1612,7 @@ async def conciliar_martminas(
     martminas_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
     if not martminas_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -1873,7 +1874,7 @@ async def conciliar_martminas(
         filename = martminas_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         # Registrar no banco
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mart Minas", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mart Minas", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -1893,7 +1894,7 @@ async def conciliar_savegnago(
     savegnago_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
     if not savegnago_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -2234,7 +2235,7 @@ async def conciliar_savegnago(
         filename = savegnago_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Savegnago", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Savegnago", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -2256,7 +2257,7 @@ async def conciliar_mateus(
     mateus_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
     if not mateus_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -2473,7 +2474,7 @@ async def conciliar_mateus(
         filename = mateus_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mateus", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Mateus", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -2495,7 +2496,7 @@ async def conciliar_drogaraia(
     drogaraia_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
     if not drogaraia_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -2738,7 +2739,7 @@ async def conciliar_drogaraia(
         filename = drogaraia_file.filename.rsplit('.', 1)[0] + "_conciliado.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Droga Raia", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Droga Raia", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',
@@ -3043,7 +3044,7 @@ async def conciliar_bancos(
     planilha: UploadFile = File(...),
     extratos: List[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
     try:
         import openpyxl
@@ -3260,7 +3261,7 @@ async def conciliar_bancos(
         # Registra a importação para aparecer no histórico da tela — sem gravar nenhuma
         # movimentação, só o registro da importação em si (como já é feito nas outras
         # rotas de conciliação/extração deste arquivo).
-        ImportacaoService(db).registrar_importacao(original_name, extensao, "Conciliação Bancária", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(original_name, extensao, "Conciliação Bancária", id_user_inc=current_user.iduser)
 
         nome_encoded = quote(original_name)
         return StreamingResponse(
@@ -3268,6 +3269,134 @@ async def conciliar_bancos(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename=\"planilha_conciliada.xlsx\"; filename*=UTF-8''{nome_encoded}"}
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/plano-saude/universal/analisar")
+async def analisar_plano_saude_universal(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Rota universal para análise de PDFs de planos de saúde, odontológicos e seguros.
+    Usa parsing determinístico (regex) — sem IA. Instantâneo e 100% confiável."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo inválido")
+    
+    try:
+        content = await file.read()
+        
+        # Obter colaboradores para matching de nomes
+        colab_repo = ColaboradorRepository(db)
+        colabs_db, _ = colab_repo.get_all(limit=5000)
+        nomes_colaboradores = [c.nome for c in colabs_db]
+        
+        # Extração universal determinística
+        ia = IAService()
+        res = await ia.extrair_beneficiarios_pdf_universal(
+            file_content=content,
+            file_name=file.filename
+        )
+        
+        titulares_extraidos = res.get("titulares", [])
+        metrics = res.get("metrics", {})
+        
+        if not titulares_extraidos:
+            sem_texto = metrics.get('total_chars', 0) < 20
+            tentou_ia = metrics.get('tentou_fallback_ia', False)
+            gemini_ok = metrics.get('gemini_configurado', False)
+            detalhe = f"Não foi possível extrair beneficiários do arquivo '{file.filename}'. "
+            if sem_texto:
+                detalhe += "O PDF parece ser uma imagem escaneada, sem texto selecionável. "
+            if tentou_ia and gemini_ok:
+                detalhe += "O fallback via IA também foi acionado, mas não retornou resultados. "
+            elif tentou_ia and not gemini_ok:
+                detalhe += (
+                    "O fallback via IA foi necessário, mas a GEMINI_API_KEY não está configurada no servidor. "
+                )
+            detalhe += "Verifique se o PDF contém uma lista de beneficiários legível."
+            raise HTTPException(status_code=422, detail=detalhe)
+        
+        # Matching de nomes com banco de dados (difflib + alias)
+        import difflib
+        from app.repositories.colaborador_alias_repository import ColaboradorAliasRepository
+        alias_repo = ColaboradorAliasRepository(db)
+        
+        for t in titulares_extraidos:
+            nome_pdf = t.get("nome_pdf", "")
+            
+            alias_record = alias_repo.get_by_nome_divergente(nome_pdf)
+            if alias_record and alias_record.colaborador:
+                nome_db = alias_record.colaborador.nome
+            else:
+                nome_db = nome_pdf
+                closest = difflib.get_close_matches(nome_pdf, nomes_colaboradores, n=1, cutoff=0.8)
+                if closest:
+                    nome_db = closest[0]
+            
+            t["nome_db"] = nome_db
+            
+            colab = colab_repo.get_by_nome(nome_db)
+            if not colab:
+                colab = colab_repo.get_by_nome(nome_pdf)
+            
+            if colab and colab.centro_custo:
+                t["centro_custo"] = str(colab.centro_custo.codigo)
+            else:
+                t["centro_custo"] = "N/D"
+            
+            if colab and hasattr(colab, 'unidade') and colab.unidade:
+                t["unidade"] = str(colab.unidade.codigo)
+            else:
+                t["unidade"] = "N/D"
+        
+        # Validações
+        nomes_titulares = [t["nome_pdf"].strip().upper() for t in titulares_extraidos]
+        titulares_unicos = set(nomes_titulares)
+        
+        nomes_dependentes = []
+        for t in titulares_extraidos:
+            for d in t.get("dependentes", []):
+                nomes_dependentes.append(d["nome"].strip().upper())
+        
+        intersection = titulares_unicos.intersection(set(nomes_dependentes))
+        
+        soma_individual = 0.0
+        soma_grupo = 0.0
+        for t in titulares_extraidos:
+            val_tit = t["valor_titular"]
+            val_deps = sum(d["valor"] for d in t.get("dependentes", []))
+            soma_individual += val_tit + val_deps
+            soma_grupo += t["valor_total"]
+        
+        validacoes = {
+            "apenas_titulares_na_tabela": True,
+            "sem_titulares_duplicados": len(nomes_titulares) == len(titulares_unicos),
+            "sem_dependentes_como_titulares": len(intersection) == 0,
+            "soma_individual_bate_com_total_geral": round(soma_individual, 2) == round(soma_grupo, 2),
+            "titulares_count": len(titulares_extraidos),
+            "dependentes_count": len(nomes_dependentes),
+            "total_count": len(titulares_extraidos) + len(nomes_dependentes)
+        }
+        
+        validacoes_sucesso = all([
+            validacoes["sem_titulares_duplicados"],
+            validacoes["sem_dependentes_como_titulares"],
+            validacoes["soma_individual_bate_com_total_geral"]
+        ])
+        
+        return {
+            "sucesso": True,
+            "dados": titulares_extraidos,
+            "validacoes": validacoes,
+            "validacoes_sucesso": validacoes_sucesso,
+            "total_geral": round(soma_grupo, 2),
+            "metrics": metrics
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -3405,7 +3534,8 @@ class ConfirmarImportacaoSorrisoPayload(BaseModel):
 @router.post("/plano-saude/sorriso/confirmar")
 def confirmar_importacao_plano_saude_sorriso(
     payload: ConfirmarImportacaoSorrisoPayload,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     try:
         from app.models.importacao import Importacao
@@ -3473,7 +3603,7 @@ def confirmar_importacao_plano_saude_sorriso(
             extensaoArquivo=extensao,
             idEmpresa=emp.idEmpresas,
             tipo=tipo_importacao,
-            idUserInc=payload.idUserInc
+            idUserInc=current_user.iduser
         )
         db.add(nova_importacao)
         db.flush() # Gerar idImportacoes
@@ -3696,13 +3826,13 @@ async def analisar_plano_saude_unimed_odonto(
 
 class DependentConfirmarUnimed(BaseModel):
     nome: str
-    tipo: str
+    tipo: Optional[str] = "D"
     valor: float
 
 class TitularConfirmarUnimed(BaseModel):
     nome_pdf: str
     nome_db: str
-    matricula: str
+    matricula: Optional[str] = ""
     valor_titular: float
     dependentes: List[DependentConfirmarUnimed]
     valor_total: float
@@ -3718,7 +3848,8 @@ class ConfirmarImportacaoUnimedPayload(BaseModel):
 @router.post("/plano-saude/unimed-odonto/confirmar")
 def confirmar_importacao_plano_saude_unimed_odonto(
     payload: ConfirmarImportacaoUnimedPayload,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     try:
         from app.models.importacao import Importacao
@@ -3786,7 +3917,7 @@ def confirmar_importacao_plano_saude_unimed_odonto(
             extensaoArquivo=extensao,
             idEmpresa=emp.idEmpresas,
             tipo=tipo_importacao,
-            idUserInc=payload.idUserInc
+            idUserInc=current_user.iduser
         )
         db.add(nova_importacao)
         db.flush()
@@ -3917,7 +4048,7 @@ async def conciliar_cema(
     cema_file: UploadFile = File(...),
     acr_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    idUserInc: Optional[int] = Form(None)
+    current_user: User = Depends(get_current_user)
 ):
     if not cema_file.filename or not acr_file.filename:
         raise HTTPException(status_code=400, detail="Arquivos inválidos")
@@ -4149,7 +4280,7 @@ async def conciliar_cema(
         filename = cema_file.filename.rsplit('.', 1)[0] + "_extraido.xlsx"
         
         from app.services.importacao_service import ImportacaoService
-        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Cema", id_user_inc=idUserInc)
+        ImportacaoService(db).registrar_importacao(filename, "xlsx", "Prorrogação - Cema", id_user_inc=current_user.iduser)
         
         headers_response = {
             'Content-Disposition': f'attachment; filename="{filename}"',

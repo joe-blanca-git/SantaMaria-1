@@ -222,7 +222,7 @@ export class PlanoSaudeComponent implements OnInit {
   isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null
     ? localStorage.getItem('sidebarCollapsed') === 'true'
     : true;
-  sidebarTab = signal<'dashboard' | 'atualizacao'>('atualizacao');
+  sidebarTab = signal<'dashboard' | 'atualizacao'>('dashboard');
   horizontalTab = signal<'plano-saude' | 'seguro-vida'>('plano-saude');
 
   toggleSidebar() {
@@ -352,7 +352,7 @@ export class PlanoSaudeComponent implements OnInit {
   
   dashDataInicio: Date | null = null;
   dashDataFim: Date | null = null;
-  activePeriodShortcut = 'ultimo-semestre';
+  activePeriodShortcut = 'este-ano';
   dashFiltroPessoa: number | null = null;
   dashFiltroCategoria: string = 'TODOS';
   
@@ -460,7 +460,7 @@ export class PlanoSaudeComponent implements OnInit {
           grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
           xAxis: {
             type: 'category',
-            data: dados.meses.map((m: any) => m.mes),
+            data: dados.meses,
             axisTick: { alignWithLabel: true }
           },
           yAxis: {
@@ -476,7 +476,7 @@ export class PlanoSaudeComponent implements OnInit {
               name: 'Gasto Mensal',
               type: 'bar',
               barWidth: '45%',
-              data: dados.meses.map((m: any) => m.valor),
+              data: dados.barrasVerticais,
               itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] }
             }
           ]
@@ -507,16 +507,15 @@ export class PlanoSaudeComponent implements OnInit {
                 label: { show: true, fontSize: 16, fontWeight: 'bold' }
               },
               labelLine: { show: false },
-              data: dados.categorias.map((c: any, index: number) => ({
-                value: c.valor,
-                name: c.nome,
+              data: (dados.categoriaBarras || []).map((c: any, index: number) => ({
+                value: c.value,
+                name: c.name,
                 itemStyle: { color: colors[index % colors.length] }
               }))
             }
           ]
         };
-
-        this.topDespesas = dados.top_despesas || [];
+        this.topDespesas = dados.rankingEmpresas || [];
       },
       error: (err) => {
         console.error('Erro ao carregar dados do dashboard analitico', err);
@@ -528,7 +527,7 @@ export class PlanoSaudeComponent implements OnInit {
   ngOnInit() {
 
     this.carregarColaboradoresParaFiltro();
-    this.onShortcutSelectChange('ultimo-semestre');
+    this.onShortcutSelectChange('este-ano');
 
     this.carregarEmpresasAtualizacao();
     this.carregarEmpresasConfig();
@@ -680,87 +679,29 @@ export class PlanoSaudeComponent implements OnInit {
     if (!this.selectedFile() || !this.activeCard()) return;
 
     this.processingError.set('');
-    const cardId = this.activeCard()?.id;
-    const cardNameLower = this.activeCard()?.name?.toLowerCase() || '';
+    this.isProcessing.set(true);
+    this.processingStep.set(1);
+    this.processingText.set('Extraindo dados do arquivo...');
 
-    if (cardId === 'sorriso') {
-      this.isProcessing.set(true);
-      this.processingStep.set(1);
-      this.processingText.set('Enviando arquivo e extraindo dados pelo Gemini...');
-
-      this.importacoesService.analisarSorriso(this.selectedFile()!).subscribe({
-        next: (res) => {
-          if (res.sucesso) {
-            this.setParsedTitulares(res.dados);
-            this.totalGeral.set(res.total_geral);
-            this.validacoes.set(res.validacoes);
-            this.validacoesSucesso.set(res.validacoes_sucesso);
-            this.processingStep.set(5);
-            this.isProcessing.set(false);
-          } else {
-            this.processingError.set('Erro ao analisar arquivo.');
-            this.isProcessing.set(false);
-          }
-        },
-        error: (err) => {
-          this.processingError.set(err.error?.detail || 'Erro ao comunicar com o servidor.');
+    this.importacoesService.analisarUniversal(this.selectedFile()!).subscribe({
+      next: (res) => {
+        if (res.sucesso) {
+          this.setParsedTitulares(res.dados);
+          this.totalGeral.set(res.total_geral);
+          this.validacoes.set(res.validacoes);
+          this.validacoesSucesso.set(res.validacoes_sucesso);
+          this.processingStep.set(5);
+          this.isProcessing.set(false);
+        } else {
+          this.processingError.set('Erro ao analisar arquivo.');
           this.isProcessing.set(false);
         }
-      });
-      return;
-    } else if (this.horizontalTab() !== 'seguro-vida' && (cardId === 'unimed-odonto' || cardNameLower.includes('unimed') || cardNameLower.includes('odonto'))) {
-      this.isProcessing.set(true);
-      this.processingStep.set(1);
-      this.processingText.set('Enviando arquivo e extraindo dados pelo Gemini...');
-
-      this.importacoesService.analisarUnimedOdonto(this.selectedFile()!).subscribe({
-        next: (res) => {
-          if (res.sucesso) {
-            this.setParsedTitulares(res.dados);
-            this.totalGeral.set(res.total_geral);
-            this.validacoes.set(res.validacoes);
-            this.validacoesSucesso.set(res.validacoes_sucesso);
-            this.processingStep.set(5);
-            this.isProcessing.set(false);
-          } else {
-            this.processingError.set('Erro ao analisar arquivo.');
-            this.isProcessing.set(false);
-          }
-        },
-        error: (err) => {
-          this.processingError.set(err.error?.detail || 'Erro ao comunicar com o servidor.');
-          this.isProcessing.set(false);
-        }
-      });
-      return;
-    } else {
-      // Dynamic general companies (including Seguros!)
-      // Since layout is dynamic, we use the Gemini-based parser (analisarSorriso)
-      this.isProcessing.set(true);
-      this.processingStep.set(1);
-      this.processingText.set('Enviando arquivo e extraindo dados pelo Gemini...');
-
-      this.importacoesService.analisarSorriso(this.selectedFile()!).subscribe({
-        next: (res) => {
-          if (res.sucesso) {
-            this.setParsedTitulares(res.dados);
-            this.totalGeral.set(res.total_geral);
-            this.validacoes.set(res.validacoes);
-            this.validacoesSucesso.set(res.validacoes_sucesso);
-            this.processingStep.set(5);
-            this.isProcessing.set(false);
-          } else {
-            this.processingError.set('Erro ao analisar arquivo.');
-            this.isProcessing.set(false);
-          }
-        },
-        error: (err) => {
-          this.processingError.set(err.error?.detail || 'Erro ao comunicar com o servidor.');
-          this.isProcessing.set(false);
-        }
-      });
-      return;
-    }
+      },
+      error: (err) => {
+        this.processingError.set(err.error?.detail || 'Erro ao comunicar com o servidor.');
+        this.isProcessing.set(false);
+      }
+    });
   }
 
   confirmAndSave() {
@@ -823,6 +764,7 @@ export class PlanoSaudeComponent implements OnInit {
     this.selectedFile.set(null);
     this.processingStep.set(0);
     this.editingRowId.set(null);
+    this.isAddingBeneficiario.set(false);
   }
 
   onColaboradorSelected(colabNome: string) {
@@ -894,6 +836,61 @@ export class PlanoSaudeComponent implements OnInit {
     this.totalGeral.set(sum);
   }
 
+  // Adicionar beneficiário manualmente (colaborador já cadastrado + valor)
+  isAddingBeneficiario = signal<boolean>(false);
+  newBeneficiarioNome = signal<string>('');
+  newBeneficiarioValor = signal<number>(0);
+
+  startAddBeneficiario() {
+    this.newBeneficiarioNome.set('');
+    this.newBeneficiarioValor.set(0);
+    this.isAddingBeneficiario.set(true);
+  }
+
+  cancelAddBeneficiario() {
+    this.isAddingBeneficiario.set(false);
+  }
+
+  onNewBeneficiarioValorChange(event: Event) {
+    const val = parseFloat((event.target as HTMLInputElement).value) || 0;
+    this.newBeneficiarioValor.set(val);
+  }
+
+  confirmAddBeneficiario() {
+    const nome = this.newBeneficiarioNome();
+    if (!nome) return;
+
+    const colab = this.colaboradoresList().find(c => c.nome === nome);
+    const centroCusto = colab?.centro_custo ? colab.centro_custo.codigo.toString() : 'N/D';
+    const unidade = colab?.unidade ? colab.unidade.codigo.toString() : 'N/D';
+    const valor = this.newBeneficiarioValor();
+
+    const currentList = this.parsedTitulares();
+    const maxId = currentList.reduce((max, t) => Math.max(max, t._id), -1);
+
+    const novoItem = {
+      _id: maxId + 1,
+      nome_pdf: nome,
+      nome_db: nome,
+      valor_titular: valor,
+      dependentes: [],
+      valor_total: valor,
+      centro_custo: centroCusto,
+      unidade: unidade
+    };
+
+    const updatedList = [...currentList, novoItem];
+    updatedList.sort((a, b) => {
+      const nameA = (a.nome_db || a.nome_pdf || '').toLowerCase();
+      const nameB = (b.nome_db || b.nome_pdf || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    this.parsedTitulares.set(updatedList);
+    this.recalculateTotalGeral();
+    this.isAddingBeneficiario.set(false);
+  }
+
   exportToExcel() {
     if (this.parsedTitulares().length === 0) return;
 
@@ -933,7 +930,8 @@ export class PlanoSaudeComponent implements OnInit {
   }
 
   carregarImportacoes() {
-    this.importacoesService.listar(this.currentImportacaoPage, this.itemsImportacaoPerPage, this.searchImportacaoTerm, 'PLANO_SAUDE').subscribe({
+    const categoria = this.horizontalTab() === 'seguro-vida' ? 'SEGURO' : 'PLANO_SAUDE';
+    this.importacoesService.listar(this.currentImportacaoPage, this.itemsImportacaoPerPage, this.searchImportacaoTerm, categoria).subscribe({
       next: (res) => {
         this.listaImportacoes = res.items;
         this.totalImportacoes = res.total;

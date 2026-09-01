@@ -286,7 +286,7 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
 
   listaEmpresasGeral: any[] = [];
   carregarEmpresasGeral() {
-    this.empresasService.listar(1, 1000, '', 1).subscribe({
+    this.empresasService.listar(1, 1000, '').subscribe({
       next: (res) => this.listaEmpresasGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
     });
   }
@@ -766,7 +766,7 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
   isSalvandoEmpresa = false;
 
   carregarEmpresasConfig() {
-    this.empresasService.listar(this.currentEmpresaConfigPage, this.itemsEmpresaConfigPerPage, this.searchEmpresaConfig, 1).subscribe({
+    this.empresasService.listar(this.currentEmpresaConfigPage, this.itemsEmpresaConfigPerPage, this.searchEmpresaConfig).subscribe({
       next: (res) => {
         this.listaEmpresasConfig = res.items;
         this.totalEmpresasConfig = res.total;

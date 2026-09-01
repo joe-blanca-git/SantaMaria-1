@@ -431,11 +431,24 @@ class DashboardService:
         butterfly_comercial = {}
         butterfly_marketing = {}
         colaboradores_totais = {}
+        empresas_totais = {}
         colab_matrix_map = {}
         colab_cc_map = {}
         
         detalhes = []
         all_months_keys = set()
+        
+        # Preencher meses com 0 para todo o período
+        cur_date = dt_inicio.replace(day=1) # normaliza para o dia 1
+        while cur_date < dt_fim_inclusive:
+            mk = f"{cur_date.year}-{cur_date.month:02d}"
+            all_months_keys.add(mk)
+            meses_totais[mk] = 0
+            if cur_date.month == 12:
+                cur_date = cur_date.replace(year=cur_date.year + 1, month=1)
+            else:
+                cur_date = cur_date.replace(month=cur_date.month + 1)
+                
         seen_movs = set()
         detalhes_idx = 0
         
@@ -501,6 +514,10 @@ class DashboardService:
                     
                 # Ranking Colaboradores e Matriz
                 colaboradores_totais[colab_nome] = colaboradores_totais.get(colab_nome, 0) + val
+                
+                # Total por Empresa
+                emp_nome = row.empresa_nome or "Sem Empresa"
+                empresas_totais[emp_nome] = empresas_totais.get(emp_nome, 0) + val
                 colab_cc_map[colab_nome] = row.centro_custo_codigo
                 
                 matrix_key = (colab_nome, row.empresa_nome)
@@ -557,6 +574,10 @@ class DashboardService:
         
         ranking_categorias = [{"posicao": i+1, "nome": c["name"], "valor": c["value"], "pct": round((c["value"]/total_geral)*100, 1)} for i, c in enumerate(cat_sorted[:10])]
         
+        # Ranking por Empresa
+        ranking_emp = sorted(empresas_totais.items(), key=lambda x: x[1], reverse=True)
+        ranking_empresas = [{"posicao": i+1, "nome": k, "valor": round(v, 2), "pct": round((v/total_geral)*100, 1)} for i, (k,v) in enumerate(ranking_emp)]
+        
         # Matrix Detalhes
         detalhes_categorias_colunas = sorted(list(categorias_totais.keys()))
         detalhes_totais_categoria = {k: round(v["valor"], 2) for k, v in categorias_totais.items()}
@@ -586,6 +607,7 @@ class DashboardService:
             "mapaData": mapa_data,
             "butterfly": butterfly,
             "rankingColaboradores": ranking_colaboradores,
+            "rankingEmpresas": ranking_empresas,
             "rankingCategorias": ranking_categorias,
             "detalhesMatrizOriginal": matriz,
             "detalhesCategoriasColunas": detalhes_categorias_colunas,
