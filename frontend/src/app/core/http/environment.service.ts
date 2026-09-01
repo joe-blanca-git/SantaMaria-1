@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { environment } from '../../../environments/environment';
 
 export abstract class IEnvironmentService {
   abstract get apiUrl(): string;
@@ -10,9 +11,8 @@ export abstract class IEnvironmentService {
   providedIn: 'root'
 })
 export class EnvironmentService implements IEnvironmentService {
-  // Simulando vindo do environment.ts real
   get apiUrl(): string {
-    return 'http://localhost:8000/api/v1'; // Endpoint padrão do FastAPI
+    return environment.apiUrl;
   }
 
   get defaultTimeout(): number {
