@@ -1,0 +1,571 @@
+import difflib
+import io
+import re
+
+import pandas as pd
+from fastapi import HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session, joinedload
+
+from app.models.colaborador import Colaborador
+from app.models.colaborador_unidade import ColaboradorUnidade
+from app.models.empresa import Empresa
+from app.models.importacao import Importacao
+from app.models.movimentacao import Movimentacao
+from app.models.unidade import Unidade
+from app.repositories.categoria_repository import CategoriaRepository
+from app.repositories.centro_custo_repository import centro_custo_repository
+from app.repositories.colaborador_alias_repository import ColaboradorAliasRepository
+from app.repositories.colaborador_repository import ColaboradorRepository
+from app.repositories.empresa_repository import EmpresaRepository
+from app.schemas.categoria import CategoriaCreate
+from app.schemas.plano_saude import (
+    ConfirmarImportacaoSorrisoPayload,
+    ConfirmarImportacaoUnimedPayload,
+    ExportarSorrisoExcelPayload,
+    ExportarUnimedExcelPayload,
+)
+from app.services.ia_service import IAService
+
+
+class PlanoSaudeIAService:
+    """Extração (IA/regex), confirmação e exportação das faturas de Plano de Saúde
+    (Sorriso, Unimed Odonto e a rota universal por regex). Extraído de
+    `app/routers/importacoes.py` para seguir o padrão Router -> Service -> Repository
+    do resto do projeto."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    # ------------------------------------------------------------------
+    # Resolução de colaborador (compartilhada entre Sorriso e a rota universal)
+    # ------------------------------------------------------------------
+    def _resolver_colaborador(self, colab_repo, alias_repo, nomes_colaboradores, documento, nome_pdf):
+        """Resolve o Colaborador de um beneficiário extraído de um PDF de plano de saúde.
+
+        Prioriza o CPF (campo 'documento') extraído do próprio PDF — mais confiável que o
+        nome, que costuma vir abreviado/divergente do cadastro. Só recorre ao fluxo antigo
+        (alias aprendido + nome mais parecido) quando o CPF não foi extraído daquele layout
+        de PDF ou não corresponde a nenhum colaborador cadastrado.
+        """
+        if documento:
+            doc_normalizado = re.sub(r'\D', '', str(documento))
+            if len(doc_normalizado) == 11:
+                colab = colab_repo.get_by_documento(doc_normalizado)
+                if colab:
+                    return colab, colab.nome
+
+        alias_record = alias_repo.get_by_nome_divergente(nome_pdf)
+        if alias_record and alias_record.colaborador:
+            nome_db = alias_record.colaborador.nome
+        else:
+            nome_db = nome_pdf
+            closest = difflib.get_close_matches(nome_pdf, nomes_colaboradores, n=1, cutoff=0.8)
+            if closest:
+                nome_db = closest[0]
+
+        colab = colab_repo.get_by_nome(nome_db)
+        if not colab:
+            colab = colab_repo.get_by_nome(nome_pdf)
+        return colab, nome_db
+
+    @staticmethod
+    def _montar_validacoes(titulares_extraidos):
+        nomes_titulares = [t["nome_pdf"].strip().upper() for t in titulares_extraidos]
+        titulares_unicos = set(nomes_titulares)
+
+        nomes_dependentes = []
+        for t in titulares_extraidos:
+            for d in t.get("dependentes", []):
+                nomes_dependentes.append(d["nome"].strip().upper())
+
+        intersection = titulares_unicos.intersection(set(nomes_dependentes))
+
+        soma_individual = 0.0
+        soma_grupo = 0.0
+        for t in titulares_extraidos:
+            val_tit = t["valor_titular"]
+            val_deps = sum(d["valor"] for d in t.get("dependentes", []))
+            soma_individual += val_tit + val_deps
+            soma_grupo += t["valor_total"]
+
+        validacoes = {
+            "apenas_titulares_na_tabela": True,
+            "sem_titulares_duplicados": len(nomes_titulares) == len(titulares_unicos),
+            "sem_dependentes_como_titulares": len(intersection) == 0,
+            "soma_individual_bate_com_total_geral": round(soma_individual, 2) == round(soma_grupo, 2),
+            "titulares_count": len(titulares_extraidos),
+            "dependentes_count": len(nomes_dependentes),
+            "total_count": len(titulares_extraidos) + len(nomes_dependentes),
+        }
+
+        validacoes_sucesso = all([
+            validacoes["sem_titulares_duplicados"],
+            validacoes["sem_dependentes_como_titulares"],
+            validacoes["soma_individual_bate_com_total_geral"],
+        ])
+
+        return validacoes, validacoes_sucesso, round(soma_grupo, 2)
+
+    def _resolver_empresa_e_categoria(self, id_empresa):
+        emp_repo = EmpresaRepository(self.db)
+        cat_repo = CategoriaRepository(self.db)
+
+        emp = None
+        if id_empresa is not None:
+            emp = emp_repo.get_by_id(id_empresa)
+
+        if not emp:
+            emp = emp_repo.get_by_nome("RDV - SANTA MARIA")
+        if not emp:
+            empresas_todas = self.db.query(Empresa).all()
+            if empresas_todas:
+                emp = empresas_todas[0]
+            else:
+                raise HTTPException(status_code=400, detail="Empresa RDV - SANTA MARIA não encontrada.")
+
+        is_seguro = "seguro" in emp.nome.lower()
+
+        if is_seguro:
+            cat = cat_repo.get_by_id(9)
+            if not cat:
+                cat = cat_repo.get_by_nome("Seguro/Saúde")
+            if not cat:
+                cat = cat_repo.get_by_nome("Seguro/Saude")
+            if not cat:
+                try:
+                    novo_cat = CategoriaCreate(nome="Seguro/Saúde", descricao="Despesas com seguros e saúde")
+                    cat = cat_repo.create(novo_cat)
+                except Exception:
+                    cat = None
+            if not cat:
+                class MockCat:
+                    idCategorias = 9
+                cat = MockCat()
+        else:
+            cat = cat_repo.get_by_nome("Plano de Saúde")
+            if not cat:
+                cat = cat_repo.get_by_nome("Plano de Saude")
+            if not cat:
+                try:
+                    novo_cat = CategoriaCreate(nome="Plano de Saúde", descricao="Despesas com planos de saúde e odontológicos")
+                    cat = cat_repo.create(novo_cat)
+                except Exception:
+                    cat = cat_repo.get_by_id(8)
+                    if not cat:
+                        raise HTTPException(status_code=400, detail="Categoria Plano de Saúde não encontrada e fallback falhou.")
+
+        return emp, cat, is_seguro
+
+    # ------------------------------------------------------------------
+    # Rota universal (regex, sem IA)
+    # ------------------------------------------------------------------
+    async def analisar_universal(self, file: UploadFile) -> dict:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="Arquivo inválido")
+
+        content = await file.read()
+
+        colab_repo = ColaboradorRepository(self.db)
+        colabs_db, _ = colab_repo.get_all(limit=5000)
+        nomes_colaboradores = [c.nome for c in colabs_db]
+
+        ia = IAService()
+        res = await ia.extrair_beneficiarios_pdf_universal(
+            file_content=content,
+            file_name=file.filename,
+        )
+
+        titulares_extraidos = res.get("titulares", [])
+        metrics = res.get("metrics", {})
+
+        if not titulares_extraidos:
+            sem_texto = metrics.get('total_chars', 0) < 20
+            tentou_ia = metrics.get('tentou_fallback_ia', False)
+            gemini_ok = metrics.get('gemini_configurado', False)
+            detalhe = f"Não foi possível extrair beneficiários do arquivo '{file.filename}'. "
+            if sem_texto:
+                detalhe += "O PDF parece ser uma imagem escaneada, sem texto selecionável. "
+            if tentou_ia and gemini_ok:
+                detalhe += "O fallback via IA também foi acionado, mas não retornou resultados. "
+            elif tentou_ia and not gemini_ok:
+                detalhe += (
+                    "O fallback via IA foi necessário, mas a GEMINI_API_KEY não está configurada no servidor. "
+                )
+            detalhe += "Verifique se o PDF contém uma lista de beneficiários legível."
+            raise HTTPException(status_code=422, detail=detalhe)
+
+        alias_repo = ColaboradorAliasRepository(self.db)
+
+        for t in titulares_extraidos:
+            nome_pdf = t.get("nome_pdf", "")
+            documento = t.get("documento")
+
+            colab, nome_db = self._resolver_colaborador(
+                colab_repo, alias_repo, nomes_colaboradores, documento, nome_pdf
+            )
+            t["nome_db"] = nome_db
+
+            if colab and colab.centro_custo:
+                t["centro_custo"] = str(colab.centro_custo.codigo)
+            else:
+                t["centro_custo"] = "N/D"
+
+            if colab and colab.unidades:
+                t["unidade"] = ", ".join(str(u.codigo) for u in colab.unidades)
+            else:
+                t["unidade"] = "N/D"
+
+        validacoes, validacoes_sucesso, total_geral = self._montar_validacoes(titulares_extraidos)
+
+        return {
+            "sucesso": True,
+            "dados": titulares_extraidos,
+            "validacoes": validacoes,
+            "validacoes_sucesso": validacoes_sucesso,
+            "total_geral": total_geral,
+            "metrics": metrics,
+        }
+
+    # ------------------------------------------------------------------
+    # Sorriso (via IA/Gemini)
+    # ------------------------------------------------------------------
+    async def analisar_sorriso(self, file: UploadFile) -> dict:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="Arquivo inválido")
+
+        content = await file.read()
+
+        colab_repo = ColaboradorRepository(self.db)
+        colabs_db, _ = colab_repo.get_all(limit=5000)
+        nomes_colaboradores = [c.nome for c in colabs_db]
+
+        ia = IAService()
+        res_ia = await ia.analisar_plano_saude_sorriso(
+            file_content=content,
+            file_name=file.filename,
+            colaboradores=nomes_colaboradores,
+        )
+
+        titulares_extraidos = res_ia.get("titulares", [])
+
+        alias_repo = ColaboradorAliasRepository(self.db)
+
+        # Injetar o Centro de Custo correspondente do banco para cada titular.
+        # Matching prioriza o CPF extraído pela IA, com fallback para alias + nome aproximado.
+        for t in titulares_extraidos:
+            nome_pdf = t.get("nome_pdf", "")
+            documento = t.get("documento")
+
+            colab, nome_db = self._resolver_colaborador(
+                colab_repo, alias_repo, nomes_colaboradores, documento, nome_pdf
+            )
+            t["nome_db"] = nome_db
+
+            if colab and colab.centro_custo:
+                t["centro_custo"] = str(colab.centro_custo.codigo)
+            else:
+                t["centro_custo"] = "N/D"
+
+            if colab and colab.unidades:
+                t["unidade"] = ", ".join(str(u.codigo) for u in colab.unidades)
+            else:
+                t["unidade"] = "N/D"
+
+        validacoes, validacoes_sucesso, total_geral = self._montar_validacoes(titulares_extraidos)
+
+        return {
+            "sucesso": True,
+            "dados": titulares_extraidos,
+            "validacoes": validacoes,
+            "validacoes_sucesso": validacoes_sucesso,
+            "total_geral": total_geral,
+        }
+
+    def confirmar_sorriso(self, payload: ConfirmarImportacaoSorrisoPayload, current_user) -> dict:
+        colab_repo = ColaboradorRepository(self.db)
+
+        emp, cat, is_seguro = self._resolver_empresa_e_categoria(payload.idEmpresa)
+
+        extensao = payload.nomeArquivo.split('.')[-1] if '.' in payload.nomeArquivo else 'pdf'
+        tipo_importacao = "SEGURO" if is_seguro else "PLANO_SAUDE"
+
+        nova_importacao = Importacao(
+            nomeArquivo=payload.nomeArquivo,
+            extensaoArquivo=extensao,
+            idEmpresa=emp.idEmpresas,
+            tipo=tipo_importacao,
+            idUserInc=current_user.iduser,
+        )
+        self.db.add(nova_importacao)
+        self.db.flush()  # Gerar idImportacoes
+
+        movimentacoes_criadas = 0
+        erros_colaboradores = []
+
+        for t in payload.titulares:
+            colab = None
+            if t.documento:
+                doc_normalizado = re.sub(r'\D', '', str(t.documento))
+                if len(doc_normalizado) == 11:
+                    colab = colab_repo.get_by_documento(doc_normalizado)
+
+            if not colab:
+                colab = colab_repo.get_by_nome(t.nome_db)
+            if not colab:
+                colab = colab_repo.get_by_nome(t.nome_pdf)
+            if not colab:
+                colab = self.db.query(Colaborador).filter(Colaborador.nome.ilike(t.nome_db)).first()
+            if not colab:
+                clean_name = t.nome_db.replace(" da ", " ").replace(" de ", " ").replace(" dos ", " ").replace(" do ", " ").replace(" e ", " ")
+                colab = self.db.query(Colaborador).filter(Colaborador.nome.ilike(f"%{clean_name}%")).first()
+
+            if not colab:
+                erros_colaboradores.append(t.nome_db)
+                continue
+
+            # --- SALVAR O ALIAS / APRENDIZADO ---
+            if t.nome_pdf and t.nome_pdf.strip().upper() != colab.nome.strip().upper():
+                try:
+                    alias_repo = ColaboradorAliasRepository(self.db)
+                    alias_repo.create_or_update(colab.idColaborador, t.nome_pdf.strip())
+                except Exception as ex:
+                    print(f"[WARN] Falha ao salvar Alias de colaborador: {ex}")
+
+            # Atualizar Centro de Custo do Colaborador se foi modificado
+            if t.centro_custo and t.centro_custo != "N/D":
+                try:
+                    cc_code = int(t.centro_custo.strip())
+                    cc_db = centro_custo_repository.get_by_codigo(self.db, cc_code)
+                    if cc_db and colab.idCentroCusto != cc_db.idCentroCusto:
+                        colab.idCentroCusto = cc_db.idCentroCusto
+                        self.db.add(colab)
+                except Exception as ex:
+                    print(f"[WARN] Falha ao atualizar Centro de Custo do Colaborador: {ex}")
+
+            nova_mov = Movimentacao(
+                idCategoria=cat.idCategorias,
+                idColaborador=colab.idColaborador,
+                idEmpresa=emp.idEmpresas,
+                idImportacoes=nova_importacao.idImportacoes,
+                valor=t.valor_total,
+            )
+            self.db.add(nova_mov)
+            movimentacoes_criadas += 1
+
+        if erros_colaboradores:
+            print(f"[WARN] Colaboradores não encontrados: {erros_colaboradores}")
+
+        self.db.commit()
+        return {
+            "sucesso": True,
+            "idImportacoes": nova_importacao.idImportacoes,
+            "movimentacoes_criadas": movimentacoes_criadas,
+            "erros_colaboradores": erros_colaboradores,
+        }
+
+    @staticmethod
+    def exportar_sorriso(payload: ExportarSorrisoExcelPayload) -> StreamingResponse:
+        rows = []
+        total_geral = 0.0
+        for t in payload.titulares:
+            rows.append({
+                "Beneficiário (Titular)": t.nome_db or t.nome_pdf,
+                "Centro de Custo": t.centro_custo or "N/D",
+                "Valor Total": t.valor_total,
+            })
+            total_geral += t.valor_total
+
+        rows.append({
+            "Beneficiário (Titular)": "TOTAL GERAL",
+            "Centro de Custo": "",
+            "Valor Total": total_geral,
+        })
+
+        df = pd.DataFrame(rows)
+        df["Valor Total"] = df["Valor Total"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Consolidação Sorriso')
+
+        output.seek(0)
+
+        headers_response = {
+            'Content-Disposition': 'attachment; filename="planilha_consolidada_sorriso.xlsx"',
+            'Access-Control-Expose-Headers': 'Content-Disposition',
+        }
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response,
+        )
+
+    # ------------------------------------------------------------------
+    # Unimed Odonto (regex + pypdf, sem IA)
+    # ------------------------------------------------------------------
+    async def analisar_unimed_odonto(self, file: UploadFile) -> dict:
+        content = await file.read()
+
+        colabs_db = self.db.query(Colaborador).all()
+        nomes_colaboradores = [c.nome for c in colabs_db]
+
+        ia = IAService()
+        res_ia = await ia.analisar_plano_saude_unimed_odonto(
+            file_content=content,
+            file_name=file.filename,
+            colaboradores=nomes_colaboradores,
+        )
+
+        titulares_extraidos = res_ia.get("titulares", [])
+
+        for t in titulares_extraidos:
+            colab = self.db.query(Colaborador).options(
+                joinedload(Colaborador.centro_custo),
+                joinedload(Colaborador.colaborador_unidades).joinedload(ColaboradorUnidade.unidade),
+            ).filter(Colaborador.nome == t.get("nome_db", "")).first()
+
+            if not colab:
+                colab = self.db.query(Colaborador).options(
+                    joinedload(Colaborador.centro_custo),
+                    joinedload(Colaborador.colaborador_unidades).joinedload(ColaboradorUnidade.unidade),
+                ).filter(Colaborador.nome == t.get("nome_pdf", "")).first()
+
+            if colab:
+                if colab.centro_custo:
+                    t["centro_custo"] = str(colab.centro_custo.codigo)
+                else:
+                    t["centro_custo"] = "N/D"
+                if colab.unidades:
+                    t["unidade"] = ", ".join(str(u.codigo) for u in colab.unidades)
+                else:
+                    t["unidade"] = "N/D"
+            else:
+                t["centro_custo"] = "N/D"
+                t["unidade"] = "N/D"
+
+        validacoes, validacoes_sucesso, total_geral = self._montar_validacoes(titulares_extraidos)
+
+        return {
+            "sucesso": True,
+            "dados": titulares_extraidos,
+            "validacoes": validacoes,
+            "validacoes_sucesso": validacoes_sucesso,
+            "total_geral": total_geral,
+        }
+
+    def confirmar_unimed_odonto(self, payload: ConfirmarImportacaoUnimedPayload, current_user) -> dict:
+        colab_repo = ColaboradorRepository(self.db)
+
+        emp, cat, is_seguro = self._resolver_empresa_e_categoria(payload.idEmpresa)
+
+        extensao = payload.nomeArquivo.split('.')[-1] if '.' in payload.nomeArquivo else 'pdf'
+        tipo_importacao = "SEGURO" if is_seguro else "PLANO_SAUDE"
+
+        nova_importacao = Importacao(
+            nomeArquivo=payload.nomeArquivo,
+            extensaoArquivo=extensao,
+            idEmpresa=emp.idEmpresas,
+            tipo=tipo_importacao,
+            idUserInc=current_user.iduser,
+        )
+        self.db.add(nova_importacao)
+        self.db.flush()
+
+        movimentacoes_criadas = 0
+        erros_colaboradores = []
+
+        for t in payload.titulares:
+            colab = colab_repo.get_by_nome(t.nome_db)
+            if not colab:
+                colab = colab_repo.get_by_nome(t.nome_pdf)
+            if not colab:
+                colab = self.db.query(Colaborador).filter(Colaborador.nome.ilike(t.nome_db)).first()
+            if not colab:
+                clean_name = t.nome_db.replace(" da ", " ").replace(" de ", " ").replace(" dos ", " ").replace(" do ", " ").replace(" e ", " ")
+                colab = self.db.query(Colaborador).filter(Colaborador.nome.ilike(f"%{clean_name}%")).first()
+
+            if not colab:
+                erros_colaboradores.append(t.nome_db)
+                continue
+
+            if t.centro_custo and t.centro_custo != "N/D":
+                try:
+                    cc_code = int(t.centro_custo.strip())
+                    cc_db = centro_custo_repository.get_by_codigo(self.db, cc_code)
+                    if cc_db and colab.idCentroCusto != cc_db.idCentroCusto:
+                        colab.idCentroCusto = cc_db.idCentroCusto
+                        self.db.add(colab)
+                except Exception as ex:
+                    print(f"[WARN] Falha ao atualizar Centro de Custo do Colaborador: {ex}")
+
+            if t.unidade and t.unidade != "N/D":
+                try:
+                    unidade_db = self.db.query(Unidade).filter(Unidade.codigo == int(t.unidade.strip())).first()
+                    if unidade_db and colab.idUnidade != unidade_db.idUnidade:
+                        colab.idUnidade = unidade_db.idUnidade
+                        self.db.add(colab)
+                except Exception as ex:
+                    print(f"[WARN] Falha ao atualizar Unidade do Colaborador: {ex}")
+
+            nova_mov = Movimentacao(
+                idCategoria=cat.idCategorias,
+                idColaborador=colab.idColaborador,
+                idEmpresa=emp.idEmpresas,
+                idImportacoes=nova_importacao.idImportacoes,
+                valor=t.valor_total,
+            )
+            self.db.add(nova_mov)
+            movimentacoes_criadas += 1
+
+        if erros_colaboradores:
+            print(f"[WARN] Colaboradores não encontrados: {erros_colaboradores}")
+
+        self.db.commit()
+        return {
+            "sucesso": True,
+            "idImportacoes": nova_importacao.idImportacoes,
+            "movimentacoes_criadas": movimentacoes_criadas,
+            "erros_colaboradores": erros_colaboradores,
+        }
+
+    @staticmethod
+    def exportar_unimed_odonto(payload: ExportarUnimedExcelPayload) -> StreamingResponse:
+        rows = []
+        total_geral = 0.0
+        for t in payload.titulares:
+            rows.append({
+                "Unidade": t.unidade or "N/D",
+                "Beneficiário (Titular)": t.nome_db or t.nome_pdf,
+                "Centro de Custo": t.centro_custo or "N/D",
+                "Valor Total": t.valor_total,
+            })
+            total_geral += t.valor_total
+
+        rows.append({
+            "Unidade": "",
+            "Beneficiário (Titular)": "TOTAL GERAL",
+            "Centro de Custo": "",
+            "Valor Total": total_geral,
+        })
+
+        df = pd.DataFrame(rows)
+        df["Valor Total"] = df["Valor Total"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Consolidação Unimed')
+
+        output.seek(0)
+
+        headers_response = {
+            'Content-Disposition': 'attachment; filename="planilha_consolidada_unimed_odonto.xlsx"',
+            'Access-Control-Expose-Headers': 'Content-Disposition',
+        }
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers_response,
+        )

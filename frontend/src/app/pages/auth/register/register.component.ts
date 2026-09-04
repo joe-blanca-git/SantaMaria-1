@@ -33,6 +33,7 @@ export class RegisterComponent {
 
   isLoading = false;
   errorMessage = '';
+  successMessage = '';
 
   passwordMatchValidator(form: FormGroup) {
     const password = form.get('password')?.value;
@@ -53,8 +54,8 @@ export class RegisterComponent {
 
     this.authService.register({ name, email, password }).subscribe({
       next: () => {
-        this.isLoading = false;
-        this.router.navigate(['/login']);
+        this.successMessage = 'Cadastro realizado com sucesso! Aguarde aprovação do administrador.';
+        setTimeout(() => this.router.navigate(['/login']), 3000);
       },
       error: (error) => {
         this.isLoading = false;

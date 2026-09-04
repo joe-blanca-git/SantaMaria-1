@@ -171,6 +171,11 @@
   .module-card {
     display: block;
 
+    // Cor padrão: garante que todo módulo tenha ícone/badge com fundo,
+    // mesmo que nenhuma cor específica seja definida abaixo.
+    --module-color: #{$primary};
+    --module-color-light: rgba($primary, 0.08);
+
     // Module Specific Color Variables
     &[data-module-id="mod-health"] {
       --module-color: #0ea5e9;
@@ -191,6 +196,10 @@
     &[data-module-id="mod-conciliacao"] {
       --module-color: #10b981;
       --module-color-light: rgba(16, 185, 129, 0.08);
+    }
+    &[data-module-id="mod-configuracoes"] {
+      --module-color: #64748b;
+      --module-color-light: rgba(100, 116, 139, 0.08);
     }
 
     ::ng-deep .erp-card {

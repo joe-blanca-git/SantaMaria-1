@@ -7,9 +7,14 @@ class Settings(BaseSettings):
     DATABASE_USER: str = "root"
     DATABASE_PASSWORD: str = ""
     
-    JWT_KEY: str = "sua_chave_secreta_aqui_para_desenvolvimento"
+    JWT_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+
+    # "development" habilita Swagger/ReDoc (/docs, /redoc, /openapi.json).
+    # Qualquer outro valor (padrão "production") os desativa — a API implantada
+    # não deve expor documentação pública.
+    ENVIRONMENT: str = "production"
 
     # Usando o conector assíncrono seria ideal, mas para manter simples no ORM padrão do SQLAlchemy
     # usaremos pymysql

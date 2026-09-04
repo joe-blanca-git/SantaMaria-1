@@ -59,7 +59,7 @@ export class LoginComponent {
       },
       error: (err) => {
         this.isLoading = false;
-        this.errorMessage = 'Email ou senha incorretos. Tente novamente.';
+        this.errorMessage = err?.error?.detail || 'Email ou senha incorretos. Tente novamente.';
         console.error('Erro no login', err);
       }
     });

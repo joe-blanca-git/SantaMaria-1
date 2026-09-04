@@ -24,6 +24,7 @@ import { CargosColaboradoresService, CargoColaborador } from '../../core/service
 import { CentrosCustoService, CentroCusto } from '../../core/services/centros-custo.service';
 import { UnidadesService, Unidade } from '../../core/services/unidades.service';
 import { EmpresasService, Empresa } from '../../core/services/empresas.service';
+import { UsersService } from '../../core/services/users.service';
 
 @Component({
   selector: 'app-configuracoes-cadastros',
@@ -48,14 +49,16 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
   ];
 
   private authService = inject(IAuthService);
+  private usersService = inject(UsersService);
   isAdmin = computed(() => this.authService.currentUser()?.role === 'admin');
 
   users = signal<User[]>([]);
   searchTermUsuarios = '';
+  usuariosErrorMessage: string | null = null;
   get filteredUsers(): User[] {
     const term = this.searchTermUsuarios.toLowerCase();
-    return this.users().filter(u => 
-      u.name.toLowerCase().includes(term) || 
+    return this.users().filter(u =>
+      u.name.toLowerCase().includes(term) ||
       u.email.toLowerCase().includes(term)
     );
   }
@@ -65,11 +68,14 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
   }
 
   carregarUsuarios() {
-    // Mock users just to render
-    this.users.set([
-      { id: '1', name: 'Admin User', email: 'admin@stamaria.ind.br', role: 'admin', active: 'S' },
-      { id: '2', name: 'Default User', email: 'default@stamaria.ind.br', role: 'user', active: 'S' }
-    ]);
+    this.usuariosErrorMessage = null;
+    this.usersService.getUsers().subscribe({
+      next: (users) => this.users.set(users),
+      error: (err) => {
+        console.error('Erro ao carregar usuários', err);
+        this.usuariosErrorMessage = err?.error?.detail || 'Não foi possível carregar os usuários.';
+      }
+    });
   }
 
   isCadastroModalOpen = false;
@@ -128,7 +134,7 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
   confirmGrantAdmin(user: User) {
     this.openConfirmModal('Alterar Acesso', `Deseja ${user.role === 'admin' ? 'remover' : 'conceder'} acesso de administrador para ${user.name}?`, () => {
       this.users.update(users => users.map(u => {
-        if (u.id === user.id) {
+        if (u.iduser === user.iduser) {
           return { ...u, role: u.role === 'admin' ? 'user' : 'admin' };
         }
         return u;
@@ -139,18 +145,24 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
 
   confirmToggleBlockUser(user: User) {
     const isBlocked = user.active === 'N';
-    const action = isBlocked ? 'desbloquear' : 'bloquear';
     this.openConfirmModal(
-      isBlocked ? 'Desbloquear Usuário' : 'Bloquear Usuário',
-      `Tem certeza que deseja ${action} o usuário ${user.name}?`,
+      isBlocked ? 'Conceder Acesso' : 'Bloquear Usuário',
+      isBlocked
+        ? `Conceder acesso à plataforma para ${user.name}?`
+        : `Tem certeza que deseja bloquear o usuário ${user.name}?`,
       () => {
-        this.users.update(users => users.map(u => {
-          if (u.id === user.id) {
-            return { ...u, active: isBlocked ? 'S' : 'N' };
+        this.usersService.changeStatus(user.iduser!, !isBlocked).subscribe({
+          next: () => {
+            this.users.update(users => users.map(u =>
+              u.iduser === user.iduser ? { ...u, active: isBlocked ? 'S' : 'N' } : u
+            ));
+            this.closeConfirmModal();
+          },
+          error: (err) => {
+            this.isConfirmLoading = false;
+            this.usuariosErrorMessage = err?.error?.detail || 'Não foi possível atualizar o status do usuário.';
           }
-          return u;
-        }));
-        this.closeConfirmModal();
+        });
       }
     );
   }
@@ -211,7 +223,9 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
     this.carregarEmpresasGeral();
     this.carregarCentrosCustoGeral();
     this.carregarUnidadesGeral();
-    this.carregarUsuarios();
+    if (this.isAdmin()) {
+      this.carregarUsuarios();
+    }
   }
 
   // Sidebar state
@@ -325,7 +339,6 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
           this.closeUnidadeModal();
           this.carregarUnidades();
           this.carregarUnidadesGeral();
-    this.carregarUsuarios();
         },
         error: (err) => { console.error(err); this.isSalvandoUnidade = false; }
       });
@@ -336,7 +349,6 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
           this.closeUnidadeModal();
           this.carregarUnidades();
           this.carregarUnidadesGeral();
-    this.carregarUsuarios();
         },
         error: (err) => { console.error(err); this.isSalvandoUnidade = false; }
       });
@@ -350,7 +362,6 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
           this.closeConfirmModal();
           this.carregarUnidades();
           this.carregarUnidadesGeral();
-    this.carregarUsuarios();
         },
         error: (err) => {
           console.error(err);

@@ -2,7 +2,6 @@ import { User } from './user.model';
 
 export interface AuthTokens {
   accessToken: string;
-  refreshToken: string;
   expiresIn?: number;
 }
 

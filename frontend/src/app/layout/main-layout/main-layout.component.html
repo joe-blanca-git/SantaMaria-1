@@ -1,4 +1,15 @@
 <div class="layout-wrapper">
+  <div class="toast-stack">
+    <div *ngFor="let toast of toasts()" class="toast-item" [class.toast-error]="toast.type === 'error'"
+      [class.toast-success]="toast.type === 'success'">
+      <i class="fa-solid" [ngClass]="toast.type === 'error' ? 'fa-circle-exclamation' : (toast.type === 'success' ? 'fa-circle-check' : 'fa-circle-info')"></i>
+      <span>{{ toast.text }}</span>
+      <button type="button" class="toast-close" (click)="dismissToast(toast.id)">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </div>
+
   <!-- Main Content Area -->
   <div class="layout-main">
     <app-header></app-header>

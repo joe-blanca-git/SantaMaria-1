@@ -28,6 +28,7 @@ services:
       DATABASE_USER: root
       DATABASE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       JWT_KEY: ${JWT_KEY}
+      ENVIRONMENT: production
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL}
 

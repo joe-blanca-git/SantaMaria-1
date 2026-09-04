@@ -30,3 +30,49 @@ class ConciliacaoResponse(BaseModel):
     linhas: List[ConciliacaoRow]
     total_divergencias: int
     total_processado: int
+
+class DependentConfirmar(BaseModel):
+    nome: str
+    valor: float
+
+class TitularConfirmar(BaseModel):
+    nome_pdf: str
+    nome_db: str
+    valor_titular: float
+    dependentes: List[DependentConfirmar]
+    valor_total: float
+    centro_custo: Optional[str] = "N/D"
+    documento: Optional[str] = None
+
+class ConfirmarImportacaoSorrisoPayload(BaseModel):
+    nomeArquivo: str
+    titulares: List[TitularConfirmar]
+    idEmpresa: Optional[int] = None
+    idUserInc: Optional[int] = None
+
+class ExportarSorrisoExcelPayload(BaseModel):
+    titulares: List[TitularConfirmar]
+
+class DependentConfirmarUnimed(BaseModel):
+    nome: str
+    tipo: Optional[str] = "D"
+    valor: float
+
+class TitularConfirmarUnimed(BaseModel):
+    nome_pdf: str
+    nome_db: str
+    matricula: Optional[str] = ""
+    valor_titular: float
+    dependentes: List[DependentConfirmarUnimed]
+    valor_total: float
+    centro_custo: Optional[str] = "N/D"
+    unidade: Optional[str] = "N/D"
+
+class ConfirmarImportacaoUnimedPayload(BaseModel):
+    nomeArquivo: str
+    titulares: List[TitularConfirmarUnimed]
+    idEmpresa: Optional[int] = None
+    idUserInc: Optional[int] = None
+
+class ExportarUnimedExcelPayload(BaseModel):
+    titulares: List[TitularConfirmarUnimed]

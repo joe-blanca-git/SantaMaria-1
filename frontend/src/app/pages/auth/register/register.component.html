@@ -12,7 +12,7 @@
     <div class="login-container">
       <div class="login-header d-flex align-items-center flex-column justify-content-center">
         <img src="images/logo.jpg" class="rounded-3 d-block d-sm-none mb-4" style="width: 150px;" alt="">
-        <span class="text-primary h2">Sistemas Integrados Financeiro</span>
+        <span class="text-primary h2">Sistemas Integrados <br> <span class="text-info">Financeiro</span> </span>
         <p class="subtitle">Crie sua conta para acessar a plataforma.</p>
       </div>
 
@@ -20,6 +20,13 @@
         <div class="login-error-alert">
           <i class="fa-solid fa-circle-exclamation"></i>
           {{ errorMessage }}
+        </div>
+      }
+
+      @if (successMessage) {
+        <div class="register-success-toast">
+          <i class="fa-solid fa-circle-check"></i>
+          {{ successMessage }}
         </div>
       }
 
@@ -64,15 +71,14 @@
           variant="primary"
           size="lg"
           [loading]="isLoading"
-          class="w-full"
-          (clicked)="onSubmit()">
+          class="w-full">
           Criar Conta
         </app-button>
       </form>
 
       <div class="register-link">
         Já possui uma conta?
-        <a routerLink="/login">Entrar na Plataforma</a>
+        <a routerLink="/login">Entrar</a>
       </div>
     </div>
   </div>

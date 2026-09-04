@@ -109,6 +109,31 @@
   animation: shake 0.5s ease-in-out;
 }
 
+.register-success-toast {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 1080;
+  background-color: $white;
+  color: $success;
+  padding: 0.9rem 1.25rem;
+  border-radius: $border-radius;
+  border: 1px solid rgba($success, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  font-size: 0.9rem;
+  font-weight: $font-weight-medium;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 360px;
+  animation: slideDown 0.25s ease-out;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 .login-form {
   display: flex;
   flex-direction: column;

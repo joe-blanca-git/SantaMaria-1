@@ -16,7 +16,7 @@ export class UserService implements IUserService {
   getUserProfile(): Observable<User> {
     return this.http.get<any>(`${this.API_URL}/auth/me`).pipe(
       map(response => ({
-        id: response.id?.toString() || response.email,
+        id: response.iduser?.toString() || response.email,
         email: response.email,
         name: response.name,
         role: response.role || 'user',

@@ -67,3 +67,6 @@
     </div>
   </div>
 </app-modal>
+
+<app-confirm-modal [isOpen]="isConfirmModalOpen" [title]="confirmTitle" [message]="confirmMessage"
+  [isLoading]="isConfirmLoading" (confirmed)="executeConfirm()" (canceled)="closeConfirmModal()"></app-confirm-modal>

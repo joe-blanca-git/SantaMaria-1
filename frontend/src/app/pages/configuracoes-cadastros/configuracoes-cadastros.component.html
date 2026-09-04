@@ -12,8 +12,8 @@
         @if (isAdmin()) {
         <li>
           <button class="main-nav-link" [class.active]="activeConfigTab === 'usuarios'"
-            (click)="setActiveConfigTab('usuarios')" title="Usuários e Acessos">
-            <i class="fa-solid fa-users-gear"></i> <span class="nav-text">Usuários e Acessos</span>
+            (click)="setActiveConfigTab('usuarios')" title="Acesso">
+            <i class="fa-solid fa-users-gear"></i> <span class="nav-text">Acesso</span>
           </button>
         </li>
         }
@@ -59,14 +59,20 @@
               <p>Importe os relatórios em PDF dos nossos parceiros para processamento via IA.</p>
             </div>
 
-              <!-- Usuários Tab Content -->
-              <div *ngIf="activeConfigTab === 'usuarios'" class="config-layout">
+              <!-- Acesso Tab Content -->
+              <div *ngIf="activeConfigTab === 'usuarios' && isAdmin()" class="config-layout">
                 <div class="config-header">
                   <div>
-                    <h2>Gerenciar Usuários e Acessos</h2>
-                    <p class="text-muted">Gerencie os usuários do sistema, senhas e níveis de acesso (Admin/Default).</p>
+                    <h2>Acesso</h2>
+                    <p class="text-muted">Aprove cadastros pendentes, bloqueie/desbloqueie usuários e gerencie senhas e níveis de acesso (Admin/Default).</p>
                   </div>
                 </div>
+
+                @if (usuariosErrorMessage) {
+                <div class="alert alert-danger d-flex align-items-center">
+                  <i class="fa-solid fa-circle-exclamation me-2"></i> {{ usuariosErrorMessage }}
+                </div>
+                }
 
                 <div class="config-toolbar d-flex justify-content-between align-items-center">
                   <div class="search-box">
@@ -95,11 +101,11 @@
                       <tr *ngFor="let user of filteredUsers">
                         <td class="fw-medium">
                           {{ user.name }}
-                          <span *ngIf="user.active === 'N'" class="badge bg-danger ms-2" style="font-size: 0.65rem;">BLOQUEADO</span>
+                          <span *ngIf="user.active === 'N'" class="badge bg-danger ms-2" style="font-size: 0.65rem;">SEM ACESSO</span>
                         </td>
                         <td>{{ user.email }}</td>
                         <td>
-                          <app-badge [text]="user.role === 'admin' ? 'Administrador' : 'Padrão'" 
+                          <app-badge [text]="user.role === 'admin' ? 'Administrador' : 'Padrão'"
                             [variant]="user.role === 'admin' ? 'primary' : 'secondary'">
                           </app-badge>
                         </td>
@@ -111,8 +117,8 @@
                             <button class="btn-icon" title="Alterar Nível de Acesso" (click)="confirmGrantAdmin(user)">
                               <i class="fa-solid fa-shield-halved"></i>
                             </button>
-                            <button class="btn-icon" [ngClass]="{'delete': user.active !== 'N'}" 
-                                    [title]="user.active === 'N' ? 'Desbloquear Usuário' : 'Bloquear Usuário'" 
+                            <button class="btn-icon" [ngClass]="{'delete': user.active !== 'N'}"
+                                    [title]="user.active === 'N' ? 'Conceder Acesso' : 'Bloquear Usuário'"
                                     (click)="confirmToggleBlockUser(user)">
                               <i class="fa-solid" [ngClass]="user.active === 'N' ? 'fa-lock-open text-success' : 'fa-lock'"></i>
                             </button>
