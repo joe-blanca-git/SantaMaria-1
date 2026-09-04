@@ -45,7 +45,10 @@ export class ColaboradorModalComponent implements OnInit, OnChanges {
     if (changes['isOpen'] && changes['isOpen'].currentValue === true) {
       this.carregarListas(); // Refresh lists when opened
       if (this.modalMode === 'edit' && this.colaboradorData) {
-        this.novoColaborador = { ...this.colaboradorData };
+        this.novoColaborador = {
+          ...this.colaboradorData,
+          idUnidade: this.colaboradorData.unidades?.[0]?.idUnidade ?? null
+        };
       } else {
         this.novoColaborador = { nome: this.initialName || '', idCentroCusto: null, idCargoColaborador: null, idUnidade: null, papel: '' };
       }
@@ -70,8 +73,12 @@ export class ColaboradorModalComponent implements OnInit, OnChanges {
 
   salvar() {
     this.isSalvando = true;
+    const payload = {
+      ...this.novoColaborador,
+      unidadeIds: this.novoColaborador.idUnidade ? [this.novoColaborador.idUnidade] : []
+    };
     if (this.modalMode === 'create') {
-      this.colaboradoresService.criar(this.novoColaborador).subscribe({
+      this.colaboradoresService.criar(payload).subscribe({
         next: (salvo) => {
           this.isSalvando = false;
           this.saved.emit(salvo);
@@ -83,7 +90,7 @@ export class ColaboradorModalComponent implements OnInit, OnChanges {
         }
       });
     } else {
-      this.colaboradoresService.atualizar(this.novoColaborador.idColaborador, this.novoColaborador).subscribe({
+      this.colaboradoresService.atualizar(this.novoColaborador.idColaborador, payload).subscribe({
         next: (salvo) => {
           this.isSalvando = false;
           this.saved.emit(salvo);

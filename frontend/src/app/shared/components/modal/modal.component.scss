@@ -30,6 +30,8 @@
   &.erp-modal--sm { max-width: 400px; }
   &.erp-modal--md { max-width: 600px; }
   &.erp-modal--lg { max-width: 900px; }
+
+  &.erp-modal--fixed-height { height: 90vh; }
 }
 
 .erp-modal-header {
@@ -64,6 +66,8 @@
 .erp-modal-body {
   padding: 1.5rem;
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 @keyframes fadeIn {

@@ -3277,6 +3277,37 @@ async def conciliar_bancos(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _resolver_colaborador_plano_saude(colab_repo, alias_repo, nomes_colaboradores, documento, nome_pdf):
+    """Resolve o Colaborador de um beneficiário extraído de um PDF de plano de saúde.
+
+    Prioriza o CPF (campo 'documento') extraído do próprio PDF — mais confiável que o
+    nome, que costuma vir abreviado/divergente do cadastro. Só recorre ao fluxo antigo
+    (alias aprendido + nome mais parecido) quando o CPF não foi extraído daquele layout
+    de PDF ou não corresponde a nenhum colaborador cadastrado.
+    """
+    if documento:
+        doc_normalizado = re.sub(r'\D', '', str(documento))
+        if len(doc_normalizado) == 11:
+            colab = colab_repo.get_by_documento(doc_normalizado)
+            if colab:
+                return colab, colab.nome
+
+    import difflib
+    alias_record = alias_repo.get_by_nome_divergente(nome_pdf)
+    if alias_record and alias_record.colaborador:
+        nome_db = alias_record.colaborador.nome
+    else:
+        nome_db = nome_pdf
+        closest = difflib.get_close_matches(nome_pdf, nomes_colaboradores, n=1, cutoff=0.8)
+        if closest:
+            nome_db = closest[0]
+
+    colab = colab_repo.get_by_nome(nome_db)
+    if not colab:
+        colab = colab_repo.get_by_nome(nome_pdf)
+    return colab, nome_db
+
+
 @router.post("/plano-saude/universal/analisar")
 async def analisar_plano_saude_universal(
     file: UploadFile = File(...),
@@ -3321,39 +3352,30 @@ async def analisar_plano_saude_universal(
             detalhe += "Verifique se o PDF contém uma lista de beneficiários legível."
             raise HTTPException(status_code=422, detail=detalhe)
         
-        # Matching de nomes com banco de dados (difflib + alias)
-        import difflib
+        # Matching com banco de dados: prioriza CPF (extraído do PDF quando o layout
+        # permite), com fallback para o fluxo antigo de alias + nome aproximado.
         from app.repositories.colaborador_alias_repository import ColaboradorAliasRepository
         alias_repo = ColaboradorAliasRepository(db)
-        
+
         for t in titulares_extraidos:
             nome_pdf = t.get("nome_pdf", "")
-            
-            alias_record = alias_repo.get_by_nome_divergente(nome_pdf)
-            if alias_record and alias_record.colaborador:
-                nome_db = alias_record.colaborador.nome
-            else:
-                nome_db = nome_pdf
-                closest = difflib.get_close_matches(nome_pdf, nomes_colaboradores, n=1, cutoff=0.8)
-                if closest:
-                    nome_db = closest[0]
-            
+            documento = t.get("documento")
+
+            colab, nome_db = _resolver_colaborador_plano_saude(
+                colab_repo, alias_repo, nomes_colaboradores, documento, nome_pdf
+            )
             t["nome_db"] = nome_db
-            
-            colab = colab_repo.get_by_nome(nome_db)
-            if not colab:
-                colab = colab_repo.get_by_nome(nome_pdf)
-            
+
             if colab and colab.centro_custo:
                 t["centro_custo"] = str(colab.centro_custo.codigo)
             else:
                 t["centro_custo"] = "N/D"
             
-            if colab and hasattr(colab, 'unidade') and colab.unidade:
-                t["unidade"] = str(colab.unidade.codigo)
+            if colab and colab.unidades:
+                t["unidade"] = ", ".join(str(u.codigo) for u in colab.unidades)
             else:
                 t["unidade"] = "N/D"
-        
+
         # Validações
         nomes_titulares = [t["nome_pdf"].strip().upper() for t in titulares_extraidos]
         titulares_unicos = set(nomes_titulares)
@@ -3431,36 +3453,30 @@ async def analisar_plano_saude_sorriso(
         
         titulares_extraidos = res_ia.get("titulares", [])
         
-        import difflib
         from app.repositories.colaborador_alias_repository import ColaboradorAliasRepository
         alias_repo = ColaboradorAliasRepository(db)
-        
-        # Injetar o Centro de Custo correspondente do banco para cada titular
+
+        # Injetar o Centro de Custo correspondente do banco para cada titular.
+        # Matching prioriza o CPF extraído pela IA, com fallback para alias + nome aproximado.
         for t in titulares_extraidos:
             nome_pdf = t.get("nome_pdf", "")
-            
-            # 1. Verifica na tabela de Alias (aprendizado)
-            alias_record = alias_repo.get_by_nome_divergente(nome_pdf)
-            if alias_record and alias_record.colaborador:
-                nome_db = alias_record.colaborador.nome
-            else:
-                # 2. Tentar achar o nome mais parecido no banco para evitar falsos negativos e falhas da IA
-                nome_db = nome_pdf
-                closest = difflib.get_close_matches(nome_pdf, nomes_colaboradores, n=1, cutoff=0.8)
-                if closest:
-                    nome_db = closest[0]
-                
+            documento = t.get("documento")
+
+            colab, nome_db = _resolver_colaborador_plano_saude(
+                colab_repo, alias_repo, nomes_colaboradores, documento, nome_pdf
+            )
             t["nome_db"] = nome_db
-            
-            colab = colab_repo.get_by_nome(nome_db)
-            if not colab:
-                colab = colab_repo.get_by_nome(nome_pdf)
-                
+
             if colab and colab.centro_custo:
                 t["centro_custo"] = str(colab.centro_custo.codigo)
             else:
                 t["centro_custo"] = "N/D"
-        
+
+            if colab and colab.unidades:
+                t["unidade"] = ", ".join(str(u.codigo) for u in colab.unidades)
+            else:
+                t["unidade"] = "N/D"
+
         # Validations in python
         # 1. Confirmar que cada titular aparece apenas uma vez
         nomes_titulares = [t["nome_pdf"].strip().upper() for t in titulares_extraidos]
@@ -3524,6 +3540,7 @@ class TitularConfirmar(BaseModel):
     dependentes: List[DependentConfirmar]
     valor_total: float
     centro_custo: Optional[str] = "N/D"
+    documento: Optional[str] = None
 
 class ConfirmarImportacaoSorrisoPayload(BaseModel):
     nomeArquivo: str
@@ -3613,7 +3630,14 @@ def confirmar_importacao_plano_saude_sorriso(
         
         # 4. Iterar titulares e criar movimentações
         for t in payload.titulares:
-            colab = colab_repo.get_by_nome(t.nome_db)
+            colab = None
+            if t.documento:
+                doc_normalizado = re.sub(r'\D', '', str(t.documento))
+                if len(doc_normalizado) == 11:
+                    colab = colab_repo.get_by_documento(doc_normalizado)
+
+            if not colab:
+                colab = colab_repo.get_by_nome(t.nome_db)
             if not colab:
                 colab = colab_repo.get_by_nome(t.nome_pdf)
             if not colab:
@@ -3622,7 +3646,7 @@ def confirmar_importacao_plano_saude_sorriso(
             if not colab:
                 clean_name = t.nome_db.replace(" da ", " ").replace(" de ", " ").replace(" dos ", " ").replace(" do ", " ").replace(" e ", " ")
                 colab = db.query(ModelColab).filter(ModelColab.nome.ilike(f"%{clean_name}%")).first()
-                
+
             if not colab:
                 erros_colaboradores.append(t.nome_db)
                 continue
@@ -3734,6 +3758,7 @@ async def analisar_plano_saude_unimed_odonto(
 ):
     try:
         from app.models.colaborador import Colaborador
+        from app.models.colaborador_unidade import ColaboradorUnidade
         from app.repositories.colaborador_repository import ColaboradorRepository
         from sqlalchemy.orm import joinedload
         
@@ -3755,22 +3780,22 @@ async def analisar_plano_saude_unimed_odonto(
         for t in titulares_extraidos:
             colab = db.query(Colaborador).options(
                 joinedload(Colaborador.centro_custo),
-                joinedload(Colaborador.unidade)
+                joinedload(Colaborador.colaborador_unidades).joinedload(ColaboradorUnidade.unidade)
             ).filter(Colaborador.nome == t.get("nome_db", "")).first()
-            
+
             if not colab:
                 colab = db.query(Colaborador).options(
                     joinedload(Colaborador.centro_custo),
-                    joinedload(Colaborador.unidade)
+                    joinedload(Colaborador.colaborador_unidades).joinedload(ColaboradorUnidade.unidade)
                 ).filter(Colaborador.nome == t.get("nome_pdf", "")).first()
-                
+
             if colab:
                 if colab.centro_custo:
                     t["centro_custo"] = str(colab.centro_custo.codigo)
                 else:
                     t["centro_custo"] = "N/D"
-                if colab.unidade:
-                    t["unidade"] = str(colab.unidade.codigo)
+                if colab.unidades:
+                    t["unidade"] = ", ".join(str(u.codigo) for u in colab.unidades)
                 else:
                     t["unidade"] = "N/D"
             else:

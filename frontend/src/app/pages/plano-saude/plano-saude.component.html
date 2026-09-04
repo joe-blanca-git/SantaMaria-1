@@ -16,12 +16,17 @@
           </button>
         </li>
         <li>
+          <button class="main-nav-link" [class.active]="sidebarTab() === 'relatorios'"
+            (click)="setSidebarTab('relatorios')" title="Relatórios">
+            <i class="fa-solid fa-file-lines"></i> <span class="nav-text">Relatórios</span>
+          </button>
+        </li>
+        <li>
           <button class="main-nav-link" [class.active]="sidebarTab() === 'atualizacao'"
             (click)="setSidebarTab('atualizacao')" title="Atualização de Dados">
             <i class="fa-solid fa-database"></i> <span class="nav-text">Atualização de Dados</span>
           </button>
         </li>
-        
       </ul>
     </aside>
 
@@ -345,6 +350,145 @@
           </main>
         </div>
         }
+
+        <!-- RELATÓRIOS TAB -->
+        @if (sidebarTab() === 'relatorios') {
+        <div class="config-layout">
+          <div class="dashboard-header border-bottom">
+            <ul class="config-nav" style="margin-bottom: 0;">
+              <li class="config-nav-item">
+                <button class="config-nav-link active">
+                  Relatório Geral
+                </button>
+              </li>
+            </ul>
+          </div>
+          <main class="dashboard-content" style="flex-grow: 1;">
+            <div class="p-4">
+
+              <!-- Painel de Filtros de Relatório -->
+              <div class="filters-panel-card mb-4">
+                <div class="d-flex justify-content-between align-items-center flex-wrap w-100 gap-3">
+                  <div class="filters-grid flex-grow-1" style="margin: 0; padding: 0;">
+                    <div class="filter-group period-filter-group">
+                      <span class="filter-label mb-2 d-block">Competência</span>
+                      <div class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2">
+                        <select class="form-select form-select-sm shortcut-select" style="width: 100px;" [ngModel]="relatorioAno()" (ngModelChange)="relatorioAno.set(+$event); onRelatorioPeriodoChange()">
+                          @for (a of anos(); track a) {
+                            <option [value]="a">{{ a }}</option>
+                          }
+                        </select>
+  
+                        <select class="form-select form-select-sm shortcut-select" style="width: 140px;" [ngModel]="relatorioMes()" (ngModelChange)="relatorioMes.set(+$event); onRelatorioPeriodoChange()">
+                          @for (m of meses; track m.value) {
+                            <option [value]="m.value">{{ m.label }}</option>
+                          }
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                      <span class="filter-label mb-2 d-block">Empresa</span>
+                      <select class="form-select form-select-sm" style="width: 200px;" [ngModel]="relatorioEmpresa()" (ngModelChange)="relatorioEmpresa.set($event ? +$event : null); onRelatorioPeriodoChange()">
+                        <option [value]="null">Todas as Empresas</option>
+                        @for (e of empresasAtualizacao; track e.idEmpresas) {
+                          <option [value]="e.idEmpresas">{{ e.nome }}</option>
+                        }
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <!-- Card Total Geral -->
+                  <div class="px-3 py-2 rounded border bg-light d-flex flex-column align-items-end" style="min-width: 160px;">
+                    <span class="text-muted small fw-medium mb-1">Total da Competência</span>
+                    <span class="fs-5 fw-bold text-dark tabular-nums">
+                      {{ totalGeralRelatorio() | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="section-header d-flex justify-content-end align-items-center mb-4 gap-2">
+                <div class="search-box" style="max-width: 350px; width: 100%;">
+                  <i class="fa-solid fa-search text-muted"></i>
+                  <input type="text" placeholder="Pesquisar por nome, empresa ou unidade..."
+                    [ngModel]="searchRelatorioTerm()" (ngModelChange)="onSearchRelatorioTermChange($event)">
+                </div>
+                <app-button variant="primary" icon="fa-solid fa-code-compare" (click)="isConciliacaoModalOpen = true">
+                  Conciliação
+                </app-button>
+                <app-button variant="outline-success" icon="fa-solid fa-file-excel" (click)="exportarRelatorio()" [disabled]="isRelatorioLoading()">
+                  Exportar Relatório (xlsx)
+                </app-button>
+              </div>
+
+              <div class="table-card mb-5">
+                <div class="table-responsive">
+                  <table class="saas-table">
+                    <thead>
+                      <tr>
+                        <th>Competência</th>
+                        <th>Unidade</th>
+                        <th>Empresa</th>
+                        <th>Nome</th>
+                        <th>Centro de Custo</th>
+                        <th class="text-end">Total (R$)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of relatoriosData(); track row.nome) {
+                      <tr>
+                        <td>
+                          <span class="badge text-bg-light border text-muted">{{ row.competencia }}</span>
+                        </td>
+                        <td class="text-muted small fw-medium">{{ row.unidade || 'N/D' }}</td>
+                        <td>
+                          <span class="company-badge text-dark fw-medium">{{ row.empresa }}</span>
+                        </td>
+                        <td class="fw-semibold text-dark">{{ row.nome }}</td>
+                        <td class="text-muted small">{{ row.centro_custo || 'N/D' }}</td>
+                        <td class="text-end amount-cell tabular-nums text-danger">
+                          {{ row.total | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                        </td>
+                      </tr>
+                      }
+                      @if (relatoriosData().length === 0) {
+                      <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                          @if (isRelatorioLoading()) {
+                            <i class="fa-solid fa-circle-notch fa-spin me-2"></i> Carregando relatórios...
+                          } @else {
+                            Nenhum registro encontrado.
+                          }
+                        </td>
+                      </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination-container p-3" *ngIf="totalRelatorioItems() > 0">
+                  <span class="text-muted small">Total de {{ totalRelatorioItems() }} registros</span>
+                  <div class="pagination-actions">
+                    <button class="btn-page" [disabled]="currentRelatorioPage() === 1"
+                      (click)="goToRelatorioPage(currentRelatorioPage() - 1)">
+                      <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <span class="page-indicator">Página {{ currentRelatorioPage() }} de {{ totalRelatorioPages() }}</span>
+                    <button class="btn-page" [disabled]="currentRelatorioPage() === totalRelatorioPages()"
+                      (click)="goToRelatorioPage(currentRelatorioPage() + 1)">
+                      <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </main>
+        </div>
+        }
+
       </div>
     </main>
   </div>
@@ -354,7 +498,7 @@
 
   <!-- Import Processing Modal -->
   <app-modal [isOpen]="isUploadModalOpen()" [title]="'Importação - ' + (activeCard()?.name || '')"
-    [size]="(processingStep() === 5) ? 'md' : 'sm'" (closed)="!isProcessing() && !isSaving() ? closeModal() : null">
+    [size]="(processingStep() === 5) ? 'lg' : 'sm'" (closed)="!isProcessing() && !isSaving() ? closeModal() : null">
 
     <div class="text-center py-3">
 
@@ -464,6 +608,7 @@
           <table class="table table-hover align-middle mb-0 text-start audit-table">
             <thead class="table-light sticky-top">
               <tr>
+                <th style="width: 90px;">Unidade</th>
                 <th>Beneficiário (Titular)</th>
                 <th class="text-end" style="width: 150px;">Valor Total</th>
                 <th class="text-end" style="width: 100px;">Ações</th>
@@ -473,6 +618,16 @@
               @for (titular of filteredParsedTitulares(); track titular._id) {
               <tr [class.bg-danger-subtle]="titular.centro_custo === 'N/D'"
                   [class.bg-warning-subtle]="isDuplicated(titular.nome_db || titular.nome_pdf) && titular.centro_custo !== 'N/D'">
+                <!-- Unidade -->
+                <td class="text-muted">
+                  @if (editingRowId() === titular._id) {
+                  <input type="text" class="form-control form-control-sm" [value]="editUnidade()"
+                     (input)="onEditUnidadeChange($event)" placeholder="Ex: 101, 104">
+                  } @else {
+                  {{ titular.unidade && titular.unidade !== 'N/D' ? titular.unidade : '-' }}
+                  }
+                </td>
+
                 <!-- Beneficiário -->
                 <td class="fw-semibold text-dark">
                   @if (editingRowId() === titular._id) {
@@ -504,6 +659,10 @@
                 <td class="text-end">
                   @if (editingRowId() === titular._id) {
                   <div class="d-flex justify-content-end gap-1">
+                    <button class="btn btn-sm-action btn-outline-primary hover-lift"
+                      (click)="openCreateColaboradorModal(titular._id, titular)" title="Cadastrar novo colaborador">
+                      <i class="fa-solid fa-user-plus"></i>
+                    </button>
                     <button class="btn btn-sm-action btn-success" (click)="saveEdit(titular._id)">
                       <i class="fa-solid fa-check"></i>
                     </button>
@@ -513,9 +672,9 @@
                   </div>
                   } @else {
                   <div class="d-flex justify-content-end gap-1">
-                    @if (titular.centro_custo === 'N/D') {
+                    @if (titular.centro_custo === 'N/D' || isDuplicated(titular.nome_db || titular.nome_pdf)) {
                     <button class="btn btn-sm-action btn-outline-primary hover-lift" [disabled]="isAddingBeneficiario()"
-                      (click)="openCreateColaboradorModal(titular._id, titular)" title="Cadastrar Colaborador">
+                      (click)="openCreateColaboradorModal(titular._id, titular)" title="Cadastrar novo colaborador">
                       <i class="fa-solid fa-user-plus"></i>
                     </button>
                     }
@@ -646,6 +805,123 @@
     [initialName]="colaboradorToCreateName" (closed)="isColaboradorModalOpen = false"
     (saved)="onColaboradorSaved($event)">
   </app-colaborador-modal>
+
+  <!-- Modal Conciliação -->
+  <app-modal [isOpen]="isConciliacaoModalOpen" title="Conciliação de Valores" (closed)="fecharModalConciliacao()" size="lg">
+    <div modal-body class="p-4" [style.min-height]="conciliacaoStep() === 1 ? '300px' : 'auto'">
+      
+      <!-- Passo 1: Upload -->
+      @if (conciliacaoStep() === 1) {
+        <div class="d-flex flex-column align-items-center justify-content-center h-100 mt-4">
+          <div class="upload-area border border-2 border-dashed rounded p-5 text-center bg-light w-100"
+               style="cursor: pointer; transition: all 0.2s ease; max-width: 600px;"
+               (click)="fileInput.click()"
+               (dragover)="onConciliacaoDragOver($event)"
+               (drop)="onConciliacaoFileDropped($event)"
+               onmouseover="this.classList.add('border-primary', 'bg-white')"
+               onmouseout="this.classList.remove('border-primary', 'bg-white')">
+            <i class="fa-solid fa-cloud-arrow-up text-primary mb-3" style="font-size: 3rem;"></i>
+            <h5 class="fw-semibold text-dark mb-2">Clique ou arraste a planilha aqui</h5>
+            <p class="text-muted small mb-0">Arquivos suportados: .xlsx, .xls</p>
+            <input #fileInput type="file" accept=".xlsx, .xls" class="d-none" (change)="onConciliacaoFileSelected($event)">
+          </div>
+          <p class="text-muted small mt-4 text-center" style="max-width: 500px;">
+            A planilha deve conter as colunas <strong>Estab</strong>, <strong>Débito</strong> e <strong>Data Trans</strong> para que o sistema consiga cruzar com os dados já processados.
+          </p>
+        </div>
+      }
+
+      <!-- Passo 2: Processando -->
+      @if (conciliacaoStep() === 2) {
+        <div class="d-flex flex-column align-items-center justify-content-center py-5">
+          <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Processando...</span>
+          </div>
+          <h5 class="fw-semibold text-dark">Cruzando os dados...</h5>
+          <p class="text-muted small">Aguarde enquanto comparamos a planilha com o banco de dados.</p>
+        </div>
+      }
+
+      <!-- Passo 3: Resultados -->
+      @if (conciliacaoStep() === 3 && conciliacaoResult()) {
+        <div class="conciliacao-results fade-in">
+          
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+              <h5 class="fw-semibold text-dark mb-1">Resultados da Conciliação</h5>
+              <span class="badge bg-light text-dark border"><i class="fa-regular fa-calendar me-1"></i> Competência: {{ conciliacaoResult()?.competencia }}</span>
+            </div>
+            <app-button variant="secondary" icon="fa-solid fa-arrow-rotate-left" (click)="abrirModalConciliacao()">
+              Nova Conciliação
+            </app-button>
+          </div>
+
+          <div class="row mb-4">
+            <div class="col-md-4">
+              <div class="card border-0 shadow-sm rounded-3 bg-white p-3 h-100">
+                <span class="text-muted small fw-medium mb-1">Total de Unidades</span>
+                <span class="fs-3 fw-bold text-dark">{{ conciliacaoResult()?.total_processado }}</span>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card border-0 shadow-sm rounded-3 bg-white p-3 h-100">
+                <span class="text-muted small fw-medium mb-1">Divergências</span>
+                <span class="fs-3 fw-bold" [class.text-danger]="(conciliacaoResult()?.total_divergencias || 0) > 0" [class.text-success]="(conciliacaoResult()?.total_divergencias || 0) === 0">
+                  {{ conciliacaoResult()?.total_divergencias }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive rounded border bg-white">
+            <table class="table table-hover align-middle mb-0" style="font-size: 0.875rem;">
+              <thead class="bg-light text-uppercase text-muted" style="letter-spacing: 0.5px; font-size: 0.75rem;">
+                <tr>
+                  <th class="border-0 fw-semibold py-3 px-4">Status</th>
+                  <th class="border-0 fw-semibold py-3 px-4">Unidade</th>
+                  <th class="border-0 fw-semibold py-3 px-4 text-end">Planilha (R$)</th>
+                  <th class="border-0 fw-semibold py-3 px-4 text-end">Sistema (R$)</th>
+                  <th class="border-0 fw-semibold py-3 px-4 text-end">Diferença (R$)</th>
+                </tr>
+              </thead>
+              <tbody class="border-top-0">
+                @for (row of conciliacaoResult()?.linhas; track row.unidade_codigo + row.empresa_abrev) {
+                  <tr>
+                    <td class="px-4 border-bottom-light">
+                      @if (row.status === 'OK') {
+                        <app-badge variant="success" icon="fa-solid fa-check">OK</app-badge>
+                      } @else if (row.status === 'DIVERGENTE') {
+                        <app-badge variant="danger" icon="fa-solid fa-triangle-exclamation">Divergente</app-badge>
+                      } @else if (row.status === 'NAO_ENCONTRADO_SISTEMA') {
+                        <app-badge variant="warning" icon="fa-solid fa-circle-question">Falta no Sist.</app-badge>
+                      } @else if (row.status === 'NAO_ENCONTRADO_PLANILHA') {
+                        <app-badge variant="warning" icon="fa-solid fa-file-circle-question">Falta na Plan.</app-badge>
+                      }
+                    </td>
+                    <td class="px-4 border-bottom-light">
+                      <div class="fw-semibold text-dark">Unidade: {{ row.unidade_codigo }}</div>
+                      <div class="text-muted small" style="font-size: 0.75rem;">Empresa: {{ row.empresa_abrev }}</div>
+                    </td>
+                    <td class="px-4 text-end tabular-nums border-bottom-light text-dark">
+                      {{ row.total_planilha | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                    </td>
+                    <td class="px-4 text-end tabular-nums border-bottom-light text-dark">
+                      {{ row.total_sistema | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                    </td>
+                    <td class="px-4 text-end tabular-nums border-bottom-light fw-semibold" [class.text-danger]="row.diferenca !== 0" [class.text-success]="row.diferenca === 0">
+                      {{ row.diferenca | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      }
+
+    </div>
+  </app-modal>
 
 </div>
 

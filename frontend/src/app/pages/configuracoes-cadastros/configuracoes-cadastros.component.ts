@@ -15,7 +15,10 @@ import { ConfirmModalComponent } from '../../shared/components/confirm-modal/con
 import { DropdownComponent } from '../../shared/components/dropdown/dropdown.component';
 import { BadgeComponent } from '../../shared/components/badge/badge.component';
 
-import { ColaboradoresService, Colaborador } from '../../core/services/colaboradores.service';
+import {
+  ColaboradoresService, Colaborador,
+  ImportPreviewResponse, ImportProcessarResponse, ImportNovo, ImportDivergente, ImportDesligado
+} from '../../core/services/colaboradores.service';
 import { CategoriasService, Categoria } from '../../core/services/categorias.service';
 import { CargosColaboradoresService, CargoColaborador } from '../../core/services/cargos-colaboradores.service';
 import { CentrosCustoService, CentroCusto } from '../../core/services/centros-custo.service';
@@ -450,6 +453,10 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
   novoColaborador: any = { nome: '', idCentroCusto: null, idCargoColaborador: null, idUnidade: null, papel: '' };
   isSalvandoColaborador = false;
 
+  getUnidadesCodigos(colab: Colaborador): string {
+    return (colab.unidades || []).map(u => u.codigo).join(', ');
+  }
+
   carregarColaboradores() {
     this.colaboradoresService.listar(this.currentPage, this.itemsPerPage, this.searchTerm).subscribe({
       next: (res) => {
@@ -668,7 +675,7 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
   carregarCentrosCustoGeral() {
     this.centrosCustoService.listar(1, 1000).subscribe({
       next: (res) => {
-        this.listaCentrosCustoGeral = (res.items || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+        this.listaCentrosCustoGeral = (res.items || []).sort((a, b) => a.codigo - b.codigo);
       }
     });
   }
@@ -693,6 +700,7 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
 
   closeCentroCustoModal() {
     this.isCentroCustoModalOpen = false;
+    this.importCcTargetRow = null;
   }
 
   toggleEstado(estado: string) {
@@ -708,8 +716,14 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
     this.isSalvandoCentroCusto = true;
     if (this.centroCustoModalMode === 'create') {
       this.centrosCustoService.criar(this.novoCentroCusto).subscribe({
-        next: () => {
+        next: (criado) => {
           this.isSalvandoCentroCusto = false;
+          if (this.importCcTargetRow) {
+            this.importCcTargetRow.idCentroCusto = criado.idCentroCusto ?? null;
+            this.importCcTargetRow.centroCustoNome = criado.nome ?? null;
+            this.importCcTargetRow.centroCustoCodigo = criado.codigo;
+            this.importCcTargetRow.ccEncontrado = true;
+          }
           this.closeCentroCustoModal();
           this.carregarCentrosCusto();
           this.carregarCentrosCustoGeral();
@@ -852,24 +866,24 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
 
 
   isImportColabModalOpen = false;
-  uploadColabState: 'idle' | 'processing' | 'done' | 'error' = 'idle';
-  currentColabStep = 0;
-  processingColabSteps = [
-    'Analisando importação',
-    'Verificando base de dados',
-    'Atualizando base de dados'
-  ];
-  uploadColabError = '';
-  uploadColabSummary: any = null;
+  importColabState: 'idle' | 'loading' | 'review' | 'processing' | 'done' | 'error' = 'idle';
+  importColabError = '';
+  importPreview: ImportPreviewResponse | null = null;
+  importResumo: ImportProcessarResponse | null = null;
+  importCcTargetRow: (ImportNovo | ImportDivergente) | null = null;
+  importSearchTerm = '';
+  importMostrarDivergenciaOnly = false;
 
   @ViewChild('colabFileInput') colabFileInput!: ElementRef<HTMLInputElement>;
 
   openImportColabModal() {
     this.isImportColabModalOpen = true;
-    this.uploadColabState = 'idle';
-    this.currentColabStep = 0;
-    this.uploadColabError = '';
-    this.uploadColabSummary = null;
+    this.importColabState = 'idle';
+    this.importColabError = '';
+    this.importPreview = null;
+    this.importResumo = null;
+    this.importSearchTerm = '';
+    this.importMostrarDivergenciaOnly = false;
     if (this.colabFileInput?.nativeElement) {
       this.colabFileInput.nativeElement.value = '';
     }
@@ -881,78 +895,125 @@ export class ConfiguracoesCadastrosComponent implements OnInit {
 
   onColabFileChange(event: any) {
     if (event.target.files && event.target.files.length > 0) {
-      this.iniciarProcessamentoColab(event.target.files[0]);
+      this.enviarArquivoImportacaoColab(event.target.files[0]);
     }
   }
 
-  async iniciarProcessamentoColab(file?: File) {
-    if (!file && this.colabFileInput?.nativeElement?.files?.length) {
-      file = this.colabFileInput.nativeElement.files[0];
-    }
+  enviarArquivoImportacaoColab(file: File) {
+    this.importColabState = 'loading';
+    this.importColabError = '';
 
-    if (!file) return;
-
-    this.uploadColabState = 'processing';
-    this.currentColabStep = 0;
-    this.uploadColabError = '';
-    this.uploadColabSummary = null;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await fetch(`${this.colaboradoresService.getApiUrl()}/upload`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.body) throw new Error('No readable stream');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-
-      let done = false;
-      let partialData = '';
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-
-        if (value) {
-          partialData += decoder.decode(value, { stream: true });
-
-          const lines = partialData.split('\n');
-          // keep the last chunk if it's incomplete
-          partialData = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.trim()) {
-              const data = JSON.parse(line);
-
-              if (data.status === 'error') {
-                this.uploadColabState = 'error';
-                this.uploadColabError = data.message;
-                return;
-              }
-
-              this.currentColabStep = data.step;
-
-              if (data.status === 'success') {
-                this.uploadColabState = 'done';
-                this.uploadColabSummary = data.summary;
-                this.carregarColaboradores(); // refresh list
-                this.carregarColaboradoresGeral(); // refresh general list
-                setTimeout(() => this.closeImportColabModal(), 5000);
-              }
-            }
-          }
-        }
+    this.colaboradoresService.importarPreview(file).subscribe({
+      next: (res) => {
+        this.importPreview = res;
+        this.importSearchTerm = '';
+        this.importMostrarDivergenciaOnly = false;
+        this.importColabState = 'review';
+      },
+      error: (err) => {
+        console.error(err);
+        this.importColabState = 'error';
+        this.importColabError = err?.error?.detail || 'Erro ao processar a planilha.';
       }
-    } catch (e: any) {
-      console.error(e);
-      this.uploadColabState = 'error';
-      this.uploadColabError = 'Erro ao conectar ao servidor.';
+    });
+  }
+
+  get importColabPodePrecessar(): boolean {
+    if (!this.importPreview) return false;
+    const totalLinhas = this.importPreview.novos.length + this.importPreview.divergentes.length + this.importPreview.desligados.length;
+    if (totalLinhas === 0) return false;
+    return this.importPreview.novos.every(n => !!n.idCentroCusto)
+      && this.importPreview.divergentes.every(d => !!d.idCentroCusto);
+  }
+
+  private matchesImportSearch(...valores: (string | number | null | undefined)[]): boolean {
+    const termo = this.importSearchTerm.trim().toLowerCase();
+    if (!termo) return true;
+    return valores.some(v => v !== null && v !== undefined && String(v).toLowerCase().includes(termo));
+  }
+
+  get importNovosBase(): ImportNovo[] {
+    if (!this.importPreview) return [];
+    return this.importMostrarDivergenciaOnly
+      ? this.importPreview.novos.filter(n => !n.ccEncontrado)
+      : this.importPreview.novos;
+  }
+
+  get importNovosFiltrados(): ImportNovo[] {
+    return this.importNovosBase.filter(n => this.matchesImportSearch(
+      n.nome, n.documento, n.centroCustoCodigo, n.centroCustoNome,
+      ...n.unidades.map(u => u.codigo), ...n.unidades.map(u => u.descricao)
+    ));
+  }
+
+  get importDivergentesFiltrados(): ImportDivergente[] {
+    if (!this.importPreview) return [];
+    return this.importPreview.divergentes.filter(d => this.matchesImportSearch(
+      d.nome, d.documento, d.centroCustoCodigo, d.centroCustoNome, d.centroCustoAtualNome,
+      ...d.unidades.map(u => u.codigo), ...d.unidadesAtuais.map(u => u.codigo)
+    ));
+  }
+
+  get importDesligadosFiltrados(): ImportDesligado[] {
+    if (!this.importPreview) return [];
+    return this.importPreview.desligados.filter(d => this.matchesImportSearch(
+      d.nome, d.documento, d.centroCustoAtualNome, ...d.unidadesAtuais.map(u => u.codigo)
+    ));
+  }
+
+  onCcExistenteSelecionado(linha: ImportNovo | ImportDivergente, cc: CentroCusto | null) {
+    linha.idCentroCusto = cc?.idCentroCusto ?? null;
+    linha.centroCustoNome = cc?.nome ?? null;
+    linha.ccEncontrado = !!cc;
+    if (cc) {
+      linha.centroCustoCodigo = cc.codigo;
     }
+  }
+
+  ccSearchFn(term: string, item: CentroCusto): boolean {
+    const termo = term.toLowerCase();
+    return String(item.codigo).includes(termo) || (item.nome || '').toLowerCase().includes(termo);
+  }
+
+  abrirNovoCcParaImportLinha(linha: ImportNovo | ImportDivergente) {
+    this.importCcTargetRow = linha;
+    this.novoCentroCusto = { codigo: linha.centroCustoCodigo, nome: '', estados: [] };
+    this.centroCustoModalMode = 'create';
+    this.isCentroCustoModalOpen = true;
+  }
+
+  processarImportacaoColab() {
+    if (!this.importPreview || !this.importColabPodePrecessar) return;
+    this.importColabState = 'processing';
+
+    const payload = {
+      novos: this.importPreview.novos.map(n => ({
+        documento: n.documento,
+        nome: n.nome,
+        idCentroCusto: n.idCentroCusto as number,
+        unidadeIds: n.unidades.map(u => u.idUnidade)
+      })),
+      divergentes: this.importPreview.divergentes.map(d => ({
+        idColaborador: d.idColaborador,
+        idCentroCusto: d.idCentroCusto as number,
+        unidadeIds: d.unidades.map(u => u.idUnidade)
+      })),
+      desligados: this.importPreview.desligados.map(d => ({ idColaborador: d.idColaborador }))
+    };
+
+    this.colaboradoresService.importarProcessar(payload).subscribe({
+      next: (res) => {
+        this.importResumo = res;
+        this.importColabState = 'done';
+        this.carregarColaboradores();
+        this.carregarColaboradoresGeral();
+      },
+      error: (err) => {
+        console.error(err);
+        this.importColabState = 'error';
+        this.importColabError = err?.error?.detail || 'Erro ao processar a importação.';
+      }
+    });
   }
 
 }

@@ -12,6 +12,7 @@ export class ModalComponent {
   @Input() isOpen = false;
   @Input() title = '';
   @Input() size: 'sm' | 'md' | 'lg' = 'md';
+  @Input() fixedHeight = false;
 
   @Output() closed = new EventEmitter<void>();
 

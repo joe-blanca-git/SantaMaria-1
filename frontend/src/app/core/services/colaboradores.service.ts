@@ -11,11 +11,13 @@ export interface Colaborador {
   nome: string;
   idCentroCusto: number;
   idCargoColaborador: number;
-  idUnidade?: number;
+  documento?: string;
+  snAtivo?: string;
+  unidadeIds?: number[];
   papel?: string;
   cargo_colaborador?: CargoColaborador;
   centro_custo?: CentroCusto;
-  unidade?: Unidade;
+  unidades?: Unidade[];
 }
 
 export interface PaginatedResponse<T> {
@@ -24,6 +26,68 @@ export interface PaginatedResponse<T> {
   page_size: number;
   total: number;
   total_pages: number;
+}
+
+export interface ImportUnidade {
+  idUnidade: number;
+  codigo: number;
+  descricao: string;
+}
+
+export interface ImportNovo {
+  documento: string;
+  nome: string;
+  unidades: ImportUnidade[];
+  centroCustoCodigo: number;
+  idCentroCusto: number | null;
+  centroCustoNome: string | null;
+  ccEncontrado: boolean;
+}
+
+export interface ImportDivergente {
+  idColaborador: number;
+  documento: string;
+  nome: string;
+  unidades: ImportUnidade[];
+  unidadesAtuais: ImportUnidade[];
+  centroCustoCodigo: number;
+  idCentroCusto: number | null;
+  centroCustoNome: string | null;
+  ccEncontrado: boolean;
+  idCentroCustoAtual: number;
+  centroCustoAtualNome: string | null;
+  ccDivergente: boolean;
+  unidadesDivergentes: boolean;
+  reativado: boolean;
+}
+
+export interface ImportDesligado {
+  idColaborador: number;
+  documento: string;
+  nome: string;
+  unidadesAtuais: ImportUnidade[];
+  centroCustoAtualNome: string | null;
+}
+
+export interface ImportErro {
+  aba: string;
+  linha: number;
+  nome: string | null;
+  documento: string | null;
+  motivo: string;
+}
+
+export interface ImportPreviewResponse {
+  novos: ImportNovo[];
+  divergentes: ImportDivergente[];
+  desligados: ImportDesligado[];
+  erros: ImportErro[];
+}
+
+export interface ImportProcessarResponse {
+  cadastrados: number;
+  atualizados: number;
+  desligados: number;
 }
 
 @Injectable({
@@ -60,5 +124,19 @@ export class ColaboradoresService {
 
   excluir(id: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}`);
+  }
+
+  importarPreview(file: File): Observable<ImportPreviewResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<ImportPreviewResponse>(`${this.apiUrl}/importar/preview`, formData);
+  }
+
+  importarProcessar(payload: {
+    novos: { documento: string; nome: string; idCentroCusto: number; unidadeIds: number[] }[];
+    divergentes: { idColaborador: number; idCentroCusto: number; unidadeIds: number[] }[];
+    desligados: { idColaborador: number }[];
+  }): Observable<ImportProcessarResponse> {
+    return this.http.post<ImportProcessarResponse>(`${this.apiUrl}/importar/processar`, payload);
   }
 }

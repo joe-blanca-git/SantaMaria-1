@@ -378,3 +378,35 @@
     -webkit-overflow-scrolling: touch;
   }
 }
+
+.import-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.import-review-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.import-review-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 140px;
+
+  h6 {
+    flex: 0 0 auto;
+    margin-bottom: 0.5rem;
+  }
+}
+
+.import-review-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}

@@ -20,9 +20,12 @@ import { ColaboradoresService } from '../../core/services/colaboradores.service'
 import { CentrosCustoService } from '../../core/services/centros-custo.service';
 import { UnidadesService } from '../../core/services/unidades.service';
 import { EmpresasService, Empresa } from '../../core/services/empresas.service';
+import { PlanoSaudeService, RelatorioGeralRow, ConciliacaoResponse } from '../../core/services/plano-saude.service';
 import { ColaboradorModalComponent } from '../../shared/components/colaborador-modal/colaborador-modal.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { ConfirmModalComponent } from '../../shared/components/confirm-modal/confirm-modal.component';
+import { Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
 export interface HealthPlanCard {
   id: string;
@@ -222,7 +225,7 @@ export class PlanoSaudeComponent implements OnInit {
   isSidebarCollapsed = localStorage.getItem('sidebarCollapsed') !== null
     ? localStorage.getItem('sidebarCollapsed') === 'true'
     : true;
-  sidebarTab = signal<'dashboard' | 'atualizacao'>('dashboard');
+  sidebarTab = signal<'dashboard' | 'atualizacao' | 'relatorios'>('dashboard');
   horizontalTab = signal<'plano-saude' | 'seguro-vida'>('plano-saude');
 
   toggleSidebar() {
@@ -230,7 +233,7 @@ export class PlanoSaudeComponent implements OnInit {
     localStorage.setItem('sidebarCollapsed', String(this.isSidebarCollapsed));
   }
 
-  setSidebarTab(tab: 'dashboard' | 'atualizacao') {
+  setSidebarTab(tab: 'dashboard' | 'atualizacao' | 'relatorios') {
     this.sidebarTab.set(tab);
   }
 
@@ -267,6 +270,7 @@ export class PlanoSaudeComponent implements OnInit {
   colaboradoresService = inject(ColaboradoresService);
   centrosCustoService = inject(CentrosCustoService);
   unidadesService = inject(UnidadesService);
+  planoSaudeService = inject(PlanoSaudeService);
 
   colaboradoresList = signal<any[]>([]);
   centrosCustoList = signal<any[]>([]);
@@ -286,6 +290,113 @@ export class PlanoSaudeComponent implements OnInit {
     });
   });
 
+  // ==========================================
+  // RELATÓRIOS (Mock Data)
+  // ==========================================
+  searchRelatorioTerm = signal<string>('');
+  currentRelatorioPage = signal<number>(1);
+  itemsRelatorioPerPage = 10;
+  totalRelatorioItems = signal<number>(0);
+  
+  relatorioMes = signal<number>(new Date().getMonth() + 1);
+  relatorioAno = signal<number>(new Date().getFullYear());
+  relatorioEmpresa = signal<number | null>(null);
+  
+  isRelatorioLoading = signal<boolean>(false);
+  relatoriosData = signal<RelatorioGeralRow[]>([]);
+  totalGeralRelatorio = signal<number>(0);
+
+  private searchSubject = new Subject<string>();
+
+  meses = [
+    { value: 1, label: 'Janeiro' },
+    { value: 2, label: 'Fevereiro' },
+    { value: 3, label: 'Março' },
+    { value: 4, label: 'Abril' },
+    { value: 5, label: 'Maio' },
+    { value: 6, label: 'Junho' },
+    { value: 7, label: 'Julho' },
+    { value: 8, label: 'Agosto' },
+    { value: 9, label: 'Setembro' },
+    { value: 10, label: 'Outubro' },
+    { value: 11, label: 'Novembro' },
+    { value: 12, label: 'Dezembro' }
+  ];
+
+  anos = computed(() => {
+    const currentYear = new Date().getFullYear();
+    return [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
+  });
+
+  carregarRelatoriosGerais() {
+    this.isRelatorioLoading.set(true);
+    this.planoSaudeService.getRelatorioGeral(
+      this.relatorioMes(),
+      this.relatorioAno(),
+      this.searchRelatorioTerm(),
+      this.relatorioEmpresa() ? Number(this.relatorioEmpresa()) : undefined,
+      this.currentRelatorioPage(),
+      this.itemsRelatorioPerPage
+    ).subscribe({
+      next: (res) => {
+        this.relatoriosData.set(res.items);
+        this.totalRelatorioItems.set(res.total);
+        this.totalGeralRelatorio.set(res.total_valor || 0);
+        this.isRelatorioLoading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.isRelatorioLoading.set(false);
+      }
+    });
+  }
+
+  exportarRelatorio() {
+    this.isRelatorioLoading.set(true);
+    this.planoSaudeService.exportarRelatorioGeral(
+      this.relatorioMes(),
+      this.relatorioAno(),
+      this.searchRelatorioTerm(),
+      this.relatorioEmpresa() ? Number(this.relatorioEmpresa()) : undefined
+    ).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `relatorio_geral_planosaude_${this.relatorioMes().toString().padStart(2, '0')}_${this.relatorioAno()}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        this.isRelatorioLoading.set(false);
+      },
+      error: (err) => {
+        console.error('Erro ao exportar relatório', err);
+        this.isRelatorioLoading.set(false);
+      }
+    });
+  }
+
+  onRelatorioPeriodoChange() {
+    this.currentRelatorioPage.set(1);
+    this.carregarRelatoriosGerais();
+  }
+
+  totalRelatorioPages = computed(() => {
+    return Math.ceil(this.totalRelatorioItems() / this.itemsRelatorioPerPage) || 1;
+  });
+
+  goToRelatorioPage(page: number) {
+    if (page >= 1 && page <= this.totalRelatorioPages()) {
+      this.currentRelatorioPage.set(page);
+      this.carregarRelatoriosGerais();
+    }
+  }
+
+  onSearchRelatorioTermChange(term: string) {
+    this.searchSubject.next(term);
+  }
+
   totalGeral = signal<number>(0);
   validacoes = signal<any>(null);
   validacoesSucesso = signal<boolean>(true);
@@ -293,6 +404,13 @@ export class PlanoSaudeComponent implements OnInit {
 
   // Colaborador modal integration
   isColaboradorModalOpen = false;
+  
+  // Conciliação Modal Integration
+  isConciliacaoModalOpen = false;
+  conciliacaoStep = signal<1 | 2 | 3>(1); // 1 = Upload, 2 = Loading, 3 = Resultado
+  conciliacaoResult = signal<ConciliacaoResponse | null>(null);
+  conciliacaoFile = signal<File | null>(null);
+
   colaboradorToCreateName = '';
   editingColaboradorRowId = signal<number | null>(null);
 
@@ -326,6 +444,53 @@ export class PlanoSaudeComponent implements OnInit {
     }
     this.isColaboradorModalOpen = false;
     this.editingColaboradorRowId.set(null);
+  }
+
+  abrirModalConciliacao() {
+    this.conciliacaoStep.set(1);
+    this.conciliacaoResult.set(null);
+    this.conciliacaoFile.set(null);
+    this.isConciliacaoModalOpen = true;
+  }
+
+  fecharModalConciliacao() {
+    this.isConciliacaoModalOpen = false;
+  }
+
+  onConciliacaoFileSelected(event: any) {
+    const file = event.target.files[0];
+    if (file) {
+      this.processarArquivoConciliacao(file);
+    }
+  }
+
+  onConciliacaoFileDropped(event: any) {
+    event.preventDefault();
+    const file = event.dataTransfer?.files[0];
+    if (file) {
+      this.processarArquivoConciliacao(file);
+    }
+  }
+
+  onConciliacaoDragOver(event: any) {
+    event.preventDefault();
+  }
+
+  private processarArquivoConciliacao(file: File) {
+    this.conciliacaoFile.set(file);
+    this.conciliacaoStep.set(2); // Loading
+
+    this.planoSaudeService.conciliarPlanilha(file).subscribe({
+      next: (res) => {
+        this.conciliacaoResult.set(res);
+        this.conciliacaoStep.set(3); // Result
+      },
+      error: (err) => {
+        console.error('Erro ao processar conciliação', err);
+        // Fallback to step 1 on error
+        this.conciliacaoStep.set(1);
+      }
+    });
   }
 
   // States for inline editing
@@ -525,6 +690,15 @@ export class PlanoSaudeComponent implements OnInit {
   }
 
   ngOnInit() {
+    this.carregarRelatoriosGerais();
+    this.searchSubject.pipe(
+      debounceTime(400),
+      distinctUntilChanged()
+    ).subscribe(term => {
+      this.searchRelatorioTerm.set(term);
+      this.currentRelatorioPage.set(1);
+      this.carregarRelatoriosGerais();
+    });
 
     this.carregarColaboradoresParaFiltro();
     this.onShortcutSelectChange('este-ano');
@@ -765,6 +939,9 @@ export class PlanoSaudeComponent implements OnInit {
     this.processingStep.set(0);
     this.editingRowId.set(null);
     this.isAddingBeneficiario.set(false);
+    if (this.isPeriodoValido()) {
+      this.carregarDadosDashboard();
+    }
   }
 
   onColaboradorSelected(colabNome: string) {
@@ -773,8 +950,8 @@ export class PlanoSaudeComponent implements OnInit {
       if (colab.centro_custo) {
         this.editCentroCusto.set(colab.centro_custo.codigo.toString());
       }
-      if (colab.unidade) {
-        this.editUnidade.set(colab.unidade.codigo.toString());
+      if (colab.unidades && colab.unidades.length) {
+        this.editUnidade.set(colab.unidades.map((u: any) => u.codigo).join(', '));
       }
     }
   }
@@ -788,6 +965,11 @@ export class PlanoSaudeComponent implements OnInit {
   onEditCCChange(event: Event) {
     const val = (event.target as HTMLInputElement).value;
     this.editCentroCusto.set(val);
+  }
+
+  onEditUnidadeChange(event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    this.editUnidade.set(val);
   }
 
   onEditValorChange(event: Event) {

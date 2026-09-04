@@ -10,30 +10,32 @@ class ColaboradorBase(BaseModel):
     idCentroCusto: Optional[int] = None
     papel: Optional[str] = Field(None, max_length=45)
     idCargoColaborador: Optional[int] = None
-    idUnidade: Optional[int] = None
+    documento: Optional[str] = Field(None, max_length=30)
+    snAtivo: Optional[str] = Field(None, max_length=1)
 
 class ColaboradorCreate(ColaboradorBase):
     nome: str = Field(..., max_length=80)
     idCentroCusto: int
     idCargoColaborador: int
-    idUnidade: Optional[int] = None
+    unidadeIds: List[int] = Field(default_factory=list)
 
 class ColaboradorUpdate(ColaboradorBase):
-    pass
+    unidadeIds: Optional[List[int]] = None
 
 class ColaboradorResponse(ColaboradorBase):
     idColaborador: int
     nome: str
     idCentroCusto: int
     idCargoColaborador: int
-    idUnidade: Optional[int] = None
+    documento: Optional[str] = None
+    snAtivo: Optional[str] = None
     createdAt: datetime
     updatedAt: Optional[datetime] = None
 
     # Opcional: incluir os dados dos relacionamentos
     cargo_colaborador: Optional[CargoColaboradorResponse] = None
     centro_custo: Optional[CentroCustoResponse] = None
-    unidade: Optional[UnidadeResponse] = None
+    unidades: List[UnidadeResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

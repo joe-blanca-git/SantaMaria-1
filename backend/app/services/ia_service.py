@@ -43,6 +43,7 @@ class TitularExtraido(BaseModel):
     dependentes: List[DependentExtraido]
     valor_total: float
     centro_custo: Optional[str] = "N/D"
+    documento: Optional[str] = None
 
 class EstruturaExtracaoPlanoSaude(BaseModel):
     titulares: List[TitularExtraido]
@@ -71,7 +72,8 @@ SCHEMA_PLANO_SAUDE = {
                     },
                     "valor_total": {"type": "NUMBER"},
                     "centro_custo": {"type": "STRING", "nullable": True},
-                    "unidade": {"type": "STRING", "nullable": True}
+                    "unidade": {"type": "STRING", "nullable": True},
+                    "documento": {"type": "STRING", "nullable": True}
                 },
                 "required": ["nome_pdf", "nome_db", "valor_titular", "dependentes", "valor_total"]
             }
@@ -128,7 +130,7 @@ class IAService:
         return -valor if negativo else valor
 
     @staticmethod
-    def _add_titular(titulares_dict, key, name, valor):
+    def _add_titular(titulares_dict, key, name, valor, documento=None):
         if key in titulares_dict:
             titulares_dict[key]["valor_titular"] = round(titulares_dict[key]["valor_titular"] + valor, 2)
             titulares_dict[key]["valor_total"] = round(titulares_dict[key]["valor_total"] + valor, 2)
@@ -136,7 +138,8 @@ class IAService:
             titulares_dict[key] = {
                 "nome_pdf": name, "nome_db": name,
                 "valor_titular": valor, "dependentes": [],
-                "valor_total": valor, "centro_custo": "N/D"
+                "valor_total": valor, "centro_custo": "N/D",
+                "documento": documento
             }
 
     def _fmt_unimed_single_line(self, lines):
@@ -275,6 +278,9 @@ class IAService:
             name = m.group(3).strip()
             tp = m.group(4)
             matricula = m.group(5) or ""
+            # Neste layout, quando o campo após T/D tem 11 dígitos, é o CPF do
+            # beneficiário (o campo "Matrícula" do cabeçalho geralmente vem vazio).
+            documento = matricula if len(matricula) == 11 else None
 
             if len(name) < 3:
                 continue
@@ -282,7 +288,7 @@ class IAService:
             if tp == 'T':
                 key = f"{name.upper()}::{matricula}" if matricula else name.upper()
                 current_titular_key = key
-                self._add_titular(titulares_dict, key, name, valor)
+                self._add_titular(titulares_dict, key, name, valor, documento=documento)
             elif tp == 'D' and current_titular_key:
                 dependentes_list.append({"nome": name, "valor": valor, "_parent": current_titular_key})
 
@@ -299,7 +305,7 @@ class IAService:
             r'(?:Titular|Dependente|Agregado|Inclus[\u00e3a]o\s+Retroativa|Exclus[\u00e3a]o\s+Retroativa)\s*'
             r'(?:Pre\u00e7o\s*M\u00e9dio)?\s+(-?[\d.]+,\d{2})'
         )
-        cpf_name_re = re.compile(r'([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF\s]{2,60}?)\s+(?:\d{1,6}\s+)?\d{11}\b')
+        cpf_name_re = re.compile(r'([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF\s]{2,60}?)\s+(?:\d{1,6}\s+)?(\d{11})\b')
 
         normalized_pages = [re.sub(r'\s+', ' ', pt) for pt in page_texts]
         total_matches = sum(len(rubrica_re.findall(p)) for p in normalized_pages)
@@ -317,6 +323,7 @@ class IAService:
                 if not name_matches:
                     continue
                 name = re.sub(r'\s+', ' ', name_matches[-1].group(1)).strip()
+                documento = name_matches[-1].group(2)
                 if len(name) < 3:
                     continue
 
@@ -326,7 +333,7 @@ class IAService:
                 if tp in ('T', 'A') or current_titular_key is None:
                     key = name.upper()
                     current_titular_key = key
-                    self._add_titular(titulares_dict, key, name, valor)
+                    self._add_titular(titulares_dict, key, name, valor, documento=documento)
                 else:
                     dependentes_list.append({"nome": name, "valor": valor, "_parent": current_titular_key})
 
@@ -412,6 +419,7 @@ class IAService:
         stopwords_name = {'PLANO', 'SUBTOTAL:', 'TOTAL:', 'BENEFICI\u00c1RIO', 'CARTEIRINHA'}
         decimal_re = re.compile(r'^-?\d+\.\d{2}$')
         boundary_re = re.compile(r'^(PLANO|SUBTOTAL:|TOTAL:)$', re.IGNORECASE)
+        cpf_re = re.compile(r'^\d{11}$')
 
         n = len(lines)
         titulares_dict = {}
@@ -442,9 +450,12 @@ class IAService:
                 continue
 
             valor = None
+            documento = None
             for k in range(idx + 1, min(idx + 25, n)):
                 if boundary_re.match(lines[k]):
                     break
+                if documento is None and cpf_re.match(lines[k]):
+                    documento = lines[k]
                 if decimal_re.match(lines[k]):
                     valor = self._parse_brl(lines[k])
             if valor is None:
@@ -453,7 +464,7 @@ class IAService:
             if tp == 'T':
                 key = nome.upper()
                 current_titular_key = key
-                self._add_titular(titulares_dict, key, nome, valor)
+                self._add_titular(titulares_dict, key, nome, valor, documento=documento)
             elif current_titular_key:
                 dependentes_list.append({"nome": nome, "valor": valor, "_parent": current_titular_key})
 
@@ -596,6 +607,7 @@ class IAService:
                a. Cada bloco de atendimentos é encerrado por uma linha "TOTAL DEPENDENTE" — isso é o subtotal daquele ÚNICO beneficiário (seja ele o titular ou um dependente), não a soma de todos os dependentes da família.
                b. Ao final de cada grupo familiar existe uma linha "TOTAL TITULAR" que já é a soma de TODOS os beneficiários daquele grupo (titular + todos os dependentes). Use esse valor diretamente como "valor_total" do grupo — NÃO some novamente os subtotais individuais, para evitar contagem duplicada.
                c. Preencha "valor_titular" com o subtotal ("TOTAL DEPENDENTE") do próprio titular (o primeiro beneficiário listado no grupo) e cada dependente com o seu respectivo subtotal individual.
+            9. Se houver um CPF (11 dígitos) associado ao titular no documento, preencha "documento" com ele (apenas números, sem pontuação). Caso contrário, deixe nulo.
 
             Retorne estritamente conforme o schema estruturado EstruturaExtracaoPlanoSaude.
             """
@@ -1353,7 +1365,8 @@ class IAService:
             4. Extraia o nome literal do titular e do dependente exatamente como consta no PDF. Preencha os campos "nome_pdf" e "nome_db" com esse exato mesmo valor literal extraído, sem tentar corrigir ou deduzir nomes.
             5. Extraia o valor unitário da mensalidade (coluna "VR. MENS.") para o titular (valor_titular) e para cada dependente (valor).
             6. Calcule a soma de mensalidade do titular e de todos os dependentes do seu grupo familiar e preencha em "valor_total".
-            
+            7. Extraia o CPF do titular (coluna "CPF", 11 dígitos) e preencha no campo "documento", apenas os números, sem pontuação. Se não houver CPF legível para aquele titular, deixe "documento" nulo.
+
             Retorne o resultado de todos os titulares de todas as páginas estritamente conforme o schema estruturado EstruturaExtracaoPlanoSaude.
             """
             
