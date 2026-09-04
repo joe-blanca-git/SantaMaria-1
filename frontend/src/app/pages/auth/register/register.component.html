@@ -1,6 +1,4 @@
 <div class="login-wrapper">
-  
-  <!-- Left Side: Illustration / Branding -->
   <div class="login-illustration">
     <div class="illustration-content">
       <h2>
@@ -10,17 +8,12 @@
     </div>
   </div>
 
-  <!-- Right Side: Form -->
   <div class="login-content">
     <div class="login-container">
-      
       <div class="login-header d-flex align-items-center flex-column justify-content-center">
-        <!-- <div class="logo">
-          <img src="/images/logo.jpg" alt="Logo" style="max-height: 40px; border-radius: 4px;">
-        </div> -->
         <img src="images/logo.jpg" class="rounded-3 d-block d-sm-none mb-4" style="width: 150px;" alt="">
         <span class="text-primary h2">Sistemas Integrados Financeiro</span>
-        <p class="subtitle">Bem-vindo de volta! Acesse sua conta.</p>
+        <p class="subtitle">Crie sua conta para acessar a plataforma.</p>
       </div>
 
       @if (errorMessage) {
@@ -30,8 +23,16 @@
         </div>
       }
 
-      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="login-form">
-        
+      <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="login-form">
+        <app-input
+          type="text"
+          label="Nome Completo"
+          placeholder="Seu nome completo"
+          formControlName="name"
+          [errorMessage]="nameError"
+          icon="fa-solid fa-user">
+        </app-input>
+
         <app-input
           type="email"
           label="Email corporativo"
@@ -50,7 +51,14 @@
           icon="fa-solid fa-lock">
         </app-input>
 
-
+        <app-input
+          type="password"
+          label="Confirmar Senha"
+          placeholder="••••••••"
+          formControlName="confirmPassword"
+          [errorMessage]="confirmPasswordError"
+          icon="fa-solid fa-lock">
+        </app-input>
 
         <app-button
           variant="primary"
@@ -58,16 +66,14 @@
           [loading]="isLoading"
           class="w-full"
           (clicked)="onSubmit()">
-          Entrar na Plataforma
+          Criar Conta
         </app-button>
-        
       </form>
 
       <div class="register-link">
-        Ainda não possui uma conta?
-        <a routerLink="/cadastro">Criar Conta</a>
+        Já possui uma conta?
+        <a routerLink="/login">Entrar na Plataforma</a>
       </div>
-      
     </div>
   </div>
 </div>

@@ -1,6 +1,6 @@
 import { Observable } from 'rxjs';
 import { Signal } from '@angular/core';
-import { AuthResponse, AuthTokens, LoginCredentials } from '../models/auth.model';
+import { AuthResponse, AuthTokens, LoginCredentials, RegisterCredentials } from '../models/auth.model';
 import { User } from '../models/user.model';
 
 export abstract class IAuthService {
@@ -10,6 +10,7 @@ export abstract class IAuthService {
   abstract getRefreshToken(): string | null;
   
   abstract login(credentials: LoginCredentials): Observable<AuthResponse>;
+  abstract register(credentials: RegisterCredentials): Observable<void>;
   abstract logout(): Observable<void>;
   abstract refreshToken(refreshToken: string): Observable<AuthTokens>;
 }

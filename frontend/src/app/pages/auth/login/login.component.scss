@@ -143,6 +143,23 @@
   }
 }
 
+.register-link {
+  margin-top: 1.5rem;
+  text-align: center;
+  color: $gray-500;
+  font-size: 0.9rem;
+
+  a {
+    color: $primary;
+    font-weight: $font-weight-medium;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
 .w-full {
   width: 100%;
   ::ng-deep .btn {

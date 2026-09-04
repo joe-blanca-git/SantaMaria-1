@@ -7,6 +7,7 @@ import { ButtonComponent } from '../../../shared/components/button/button.compon
 import { InputComponent } from '../../../shared/components/input/input.component';
 import { CardComponent } from '../../../shared/components/card/card.component';
 import { ErrorStateComponent } from '../../../shared/components/error-state/error-state.component';
+import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-login',
@@ -17,7 +18,8 @@ import { ErrorStateComponent } from '../../../shared/components/error-state/erro
     ButtonComponent, 
     InputComponent, 
     CardComponent,
-    ErrorStateComponent
+    ErrorStateComponent,
+    RouterLink
   ],
   templateUrl: './login.component.html',
   styleUrl: './login.component.scss'

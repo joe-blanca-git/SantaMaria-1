@@ -12,7 +12,7 @@ from app.api.deps import get_current_user
 router = APIRouter()
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register_user(user_in: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
     """
     Registra um novo usuário no sistema.
     """

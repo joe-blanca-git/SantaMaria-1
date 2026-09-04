@@ -14,6 +14,11 @@ export const routes: Routes = [
     canActivate: [noAuthGuard]
   },
   {
+    path: 'cadastro',
+    loadComponent: () => import('./pages/auth/register/register.component').then(m => m.RegisterComponent),
+    canActivate: [noAuthGuard]
+  },
+  {
     path: '',
     loadComponent: () => import('./layout/main-layout/main-layout.component').then(m => m.MainLayoutComponent),
     canActivate: [authGuard],

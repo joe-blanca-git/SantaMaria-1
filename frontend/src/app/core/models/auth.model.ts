@@ -15,3 +15,9 @@ export interface LoginCredentials {
   email: string;
   password?: string; // Optional if using magic link
 }
+
+export interface RegisterCredentials {
+  name: string;
+  email: string;
+  password: string;
+}

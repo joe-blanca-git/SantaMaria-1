@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, tap, of, map } from 'rxjs';
 import { Router } from '@angular/router';
 import { IAuthService } from '../interfaces/auth.service';
-import { AuthResponse, AuthTokens, LoginCredentials } from '../models/auth.model';
+import { AuthResponse, AuthTokens, LoginCredentials, RegisterCredentials } from '../models/auth.model';
 import { IEnvironmentService } from '../http/environment.service';
 import { User } from '../models/user.model';
 
@@ -93,6 +93,10 @@ export class AuthService implements IAuthService {
         localStorage.setItem(this.USER_STORAGE_KEY, JSON.stringify(authResponse.user));
       })
     );
+  }
+
+  register(credentials: RegisterCredentials): Observable<void> {
+    return this.http.post<void>(`${this.API_URL}/auth/register`, credentials);
   }
 
   logout(): Observable<void> {
